@@ -3,8 +3,9 @@
 이 문서는 `jady.call`의 표준 인터페이스를 정의합니다. 모든 언어의 구현체는 이 문서에 정의된 이름과 구조를 엄격히 준수해야 합니다.
 
 ## 0. 기본 원칙 (General Principles)
+<details>
+<summary>펼쳐보기</summary>
 
-- **Asynchronous**: 모든 구현체는 기본적으로 **비동기(Async)** 동작을 지향해야 합니다. (Return Promise, Future, Coroutine, etc.)
 - **Semantic Consistency**: **동일한 설정(Config)은 어떤 언어/플랫폼에서 실행되든 동일한 의미(Semantics)와 동일한 HTTP 요청 결과를 보장해야 합니다.**
     - 이를 위해, 플랫폼에 따라 동작이 달라지거나 구현이 불가능한 기능은 **`platform`** 객체 아래로 분리하여 명시적으로 사용하도록 합니다.
 - **Stateless**: `jady.call`은 상태를 가지지 않는 순수 함수(Pure Function) 혹은 정적 메서드(Static Method)처럼 동작해야 합니다.
@@ -23,10 +24,10 @@
 - **Security by Design**: 보안은 라이브러리 설계 및 구현의 모든 단계에서 핵심 고려 사항이어야 합니다. 데이터 처리, 옵션 설계, 에러 보고 방식 등 모든 측면에서 보안을 최우선으로 고려해야 합니다.
 - **UTF-8 by Default**: 문자열 처리(URL, JSON, Body, Auth 등)의 기본 인코딩은 **UTF-8**입니다. 단, HTTP 헤더와 같이 표준 스펙이 특정 인코딩(ASCII/ISO-8859-1)을 강제하는 경우는 예외입니다.
 - **Caller Ownership**: 리소스(Stream, File Handle 등)의 수명 주기는 **호출자(Caller)**가 관리합니다.
-    - **Input**: 사용자가 전달한 스트림이나 파일 핸들은 라이브러리가 읽기만 할 뿐, 전송 후 자동으로 닫지 않습니다.
-    - **Idempotency**: `jady.call`은 재시도 메커니즘을 제공하지만, 요청의 **멱등성(Idempotency)**은 보장하지 않습니다. 쓰기 작업(Write)의 경우, 서버 측에서 중복 실행에 대한 방지 로직을 구현하거나, 사용자가 직접 제어해야 합니다.
-    - **Callback Security**: `hooks`와 같은 콜백 함수를 통해 요청 설정을 변경할 때 보안에 유의해야 합니다. 콜백 내부에서 민감한 헤더를 수정하거나, 로컬 파일 시스템에 접근하는 등의 작업은 보안 위험을 초래할 수 있습니다.
-    - **Output**: `responseType: 'stream'` 등으로 반환된 리소스는 사용자가 명시적으로 닫아야(Close) 합니다.
+- **Input**: 사용자가 전달한 스트림이나 파일 핸들은 라이브러리가 읽기만 할 뿐, 전송 후 자동으로 닫지 않습니다.
+- **Idempotency**: `jady.call`은 재시도 메커니즘을 제공하지만, 요청의 **멱등성(Idempotency)**은 보장하지 않습니다. 쓰기 작업(Write)의 경우, 서버 측에서 중복 실행에 대한 방지 로직을 구현하거나, 사용자가 직접 제어해야 합니다.
+- **Callback Security**: `hooks`와 같은 콜백 함수를 통해 요청 설정을 변경할 때 보안에 유의해야 합니다. 콜백 내부에서 민감한 헤더를 수정하거나, 로컬 파일 시스템에 접근하는 등의 작업은 보안 위험을 초래할 수 있습니다.
+- **Output**: `responseType: 'stream'` 등으로 반환된 리소스는 사용자가 명시적으로 닫아야(Close) 합니다.
 - **Type Safety**: 정적 타입 언어(TypeScript, Java, Go 등) 구현체는 컴파일 타임에 오류를 잡을 수 있도록 정확한 타입 정의와 제네릭(Generics)을 제공해야 합니다.
 - **Atomic Operation**: 모든 요청은 성공 또는 실패의 원자적(Atomic) 결과를 가져야 합니다. 부분적인 성공이나 어중간한 상태(Partial State)로 남지 않아야 하며, 실패 시에는 명확한 예외를 발생시켜야 합니다.
 - **Date Formats**: Date 객체는 서버와 호환성을 위해 ISO 8601 문자열로 직렬화해야 합니다.
@@ -35,10 +36,16 @@
 - **Traceability**: 요청의 전체 수명 주기(Life-cycle) 동안 식별자(`requestId`)와 메타데이터(`meta`)는 보존되어야 하며, 로그나 에러 객체를 통해 추적 가능해야 합니다.
 - **Deterministic Execution**: 비동기 로직(Hooks, Retry, Redirect 등)의 실행 순서는 네트워크 상태나 시스템 부하에 관계없이 항상 결정론적(Deterministic)이어야 합니다. (Race Condition 방지)
 
-- **개발자 경험 우선 (Developer Experience First)**: API는 직관적이어야 하며, 에러 메시지는 명확하고 디버깅에 유용해야 합니다. 잘 정리된 문서는 라이브러리의 핵심적인 부분으로 간주됩니다.
-- **명확한 버전 관리 (Clear Versioning Policy)**: 모든 릴리즈는 유의적 버전(Semantic Versioning) 2.0.0 규칙을 엄격히 준수합니다. 이를 통해 사용자는 버전 업그레이드에 따른 호환성 변경을 명확히 예측할 수 있습니다. 주요 변경(Breaking Change)은 반드시 메이저 버전 업데이트를 통해 이루어지며, 상세한 마이그레이션 가이드를 함께 제공합니다.
-- **성능을 고려한 설계 (Performance as a Feature)**: 라이브러리는 최소한의 오버헤드와 효율적인 리소스 사용을 목표로 합니다. 불필요한 메모리 할당이나 연산을 지양하고, 대용량 데이터 처리 시에도 안정적인 성능을 제공해야 합니다.
-- **확장성과 테스트 용이성 (Extensibility & Testability)**: 라이브러리의 핵심 기능은 `hooks`나 `adapter`와 같은 명확한 인터페이스를 통해 확장 가능해야 합니다. 또한, 모든 동작은 예측 가능해야 하며, 사용자가 자신의 코드를 쉽게 테스트할 수 있도록 Mocking과 같은 테스트 전략을 지원하는 구조를 지향합니다.
+- **Developer Experience First**: API는 직관적이어야 하며, 에러 메시지는 명확하고 디버깅에 유용해야 합니다. 잘 정리된 문서는 라이브러리의 핵심적인 부분으로 간주됩니다.
+- **Clear Versioning Policy**: 모든 릴리즈는 유의적 버전(Semantic Versioning) 2.0.0 규칙을 엄격히 준수합니다. 이를 통해 사용자는 버전 업그레이드에 따른 호환성 변경을 명확히 예측할 수 있습니다. 주요 변경(Breaking Change)은 반드시 메이저 버전 업데이트를 통해 이루어지며, 상세한 마이그레이션 가이드를 함께 제공합니다.
+- **Performance as a Feature**: 라이브러리는 최소한의 오버헤드와 효율적인 리소스 사용을 목표로 합니다. 불필요한 메모리 할당이나 연산을 지양하고, 대용량 데이터 처리 시에도 안정적인 성능을 제공해야 합니다.
+- **Extensibility & Testability**: 라이브러리의 핵심 기능은 `hooks`나 `adapter`와 같은 명확한 인터페이스를 통해 확장 가능해야 합니다. 또한, 모든 동작은 예측 가능해야 하며, 사용자가 자신의 코드를 쉽게 테스트할 수 있도록 Mocking과 같은 테스트 전략을 지원하는 구조를 지향합니다.
+
+</details>
+
+
+## 0.1. 비동기 (Asynchronous)
+모든 구현체는 기본적으로 **비동기(Async)** 동작을 지향해야 합니다. (Return Promise, Future, Coroutine, etc.)
 
 ## 1. 필수로 포함되어야 할 파라미터 (The Input)
 
