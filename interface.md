@@ -15,7 +15,10 @@
 - **baseUrl**: (Optional) 기본 URL (String).
     - `url`이 상대 경로일 경우, `baseUrl`과 결합됩니다.
     - `url`이 절대 경로(`http://...`)일 경우, `baseUrl`은 무시됩니다.
-- **url**: 대상 주소 (String)
+- **url**: 대상 주소 (String). (Path Parameter가 포함된 경우 `{key}` 또는 `:key` 형식 사용 권장)
+- **path**: (Optional) URL Path Parameter 치환 객체 (Object/Dict).
+    - `url` 내의 `{key}` 또는 `:key` 패턴을 찾아 해당 값으로 치환합니다.
+    - 값은 자동으로 **URL Encoding** 처리되어야 합니다. (예: `id`가 `a/b`면 `a%2Fb`로 치환)
 - **method**: HTTP 메서드 (String). (기본값: `GET`. 입력은 대소문자를 구분하지 않으나, 전송 시 **대문자**로 정규화됩니다.)
 - **params**: (Optional) Query Parameter (Object/Dict). 표준 URL Encoding (`application/x-www-form-urlencoded`)으로 변환. (공백은 `+`로 인코딩)
     - **배열(Array/List)** 값은 키 반복(`key=v1&key=v2`) 형태로 직렬화합니다.
@@ -62,7 +65,7 @@
     - `'manual'`: 3xx 응답을 그대로 반환합니다. (상태 코드 확인 필요)
 - **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용)
 - **retry**: (Optional) 실패 시 재시도 횟수 (Number, 기본값: 0).
-    - 네트워크 오류 및 5xx 응답 시 재시도합니다.
+    - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number, ms 단위, 기본값: 0).
 - **socketPath**: (Optional) Unix Domain Socket 경로 (String). (설정 시 `url`의 호스트 부분은 무시됨. 예: `/var/run/docker.sock`)
 - **localAddress**: (Optional) 요청을 보낼 로컬 네트워크 인터페이스의 IP 주소 (String). (IP Rotation, Multi-homed 서버 등에서 사용)
@@ -91,6 +94,7 @@
     - `responseType`이 `'text'`이거나 `'auto'`(텍스트로 판별됨)일 때 적용됩니다.
     - 예: `'euc-kr'`, `'windows-1252'`
 - **jsonReplacer**: (Optional) JSON 직렬화 시 사용할 변환 함수 또는 화이트리스트 배열. (JS: `JSON.stringify`의 replacer, Python: `default` 함수 등 매핑)
+- **jsonReviver**: (Optional) JSON 파싱 시 사용할 변환 함수. (JS: `JSON.parse`의 reviver, Python: `object_hook` 등 매핑)
 - **decompress**: (Optional) 응답 본문 자동 압축 해제 여부 (Boolean, 기본값: `true`).
     - `false`로 설정 시, 압축된 바이너리 데이터가 그대로 `body`에 반환됩니다. (다운로드 등에 사용)
 - **xsrfCookieName**: (Optional) CSRF 토큰을 읽어올 쿠키 이름 (String, 기본값: `'XSRF-TOKEN'`). (브라우저 환경 전용)
@@ -151,6 +155,7 @@
     - `'ENETWORK'`: 네트워크 연결 실패.
     - `'EPARSE'`: 응답 데이터 파싱 실패 (`responseType: 'json'` 등).
     - `'EMAXSIZE'`: 응답 본문 크기 제한 초과.
+    - `'EMAXREDIRECTS'`: 리다이렉트 횟수 초과.
 
 ## 4. 타입 지원 (Type Support - 권장사항)
 
@@ -173,7 +178,8 @@
     - **NaN, Infinity**: **`null`**로 변환합니다. (JSON 표준 준수)
     - **Large Integer (JS)**: JavaScript 환경에서 64-bit 정수(BigInt)는 `JSON.parse` 시 정밀도 손실이 발생할 수 있습니다. 이 경우 `responseType: 'text'` 사용을 권장합니다.
 - **Headers (`headers`)**:
-    - `null`, `undefined`: **제외(Omit)**합니다.
+    - `undefined`: **제외(Omit)**합니다. (기본 헤더가 있다면 적용됨)
+    - `null`: **제거(Remove)**합니다. (기본 헤더가 있어도 전송하지 않음)
     - **배열(Array)** 값: 쉼표(`,`)로 이어 붙여 하나의 문자열로 만듭니다. (예: `['a', 'b']` -> `"a,b"`)
     - **Boolean 값**: 소문자 문자열 `"true"`, `"false"`로 변환합니다. (언어별 `True`/`true` 차이 제거)
     - **Date 객체**: **HTTP Date** 형식(UTC String)으로 변환합니다. (예: `Wed, 21 Oct 2015 07:28:00 GMT`)
