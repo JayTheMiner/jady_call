@@ -20,11 +20,11 @@
 - **url**: 대상 주소 (String). (Path Parameter가 포함된 경우 `{key}` 또는 `:key` 형식 사용 권장)
 - **path**: (Optional) URL Path Parameter 치환 객체 (Object/Dict).
     - `url` 내의 `{key}` 또는 `:key` 패턴을 찾아 해당 값으로 치환합니다.
-    - 값은 자동으로 **URL Encoding** 처리되어야 합니다. (예: `id`가 `a/b`면 `a%2Fb`로 치환)
+    - 값은 자동으로 **URL Encoding** 처리되어야 합니다. (경로 구분자 `/`를 포함한 모든 특수 문자가 인코딩되어야 합니다. 예: `id`가 `a/b`면 `a%2Fb`로 치환)
 - **method**: HTTP 메서드 (String). (기본값: `GET`. 입력은 대소문자를 구분하지 않으나, 전송 시 **대문자**로 정규화됩니다.)
 - **params**: (Optional) Query Parameter (Object/Dict). 표준 URL Encoding (`application/x-www-form-urlencoded`)으로 변환. (공백은 `+`로 인코딩)
     - **배열(Array/List)** 값은 키 반복(`key=v1&key=v2`) 형태로 직렬화합니다.
-    - **중첩 객체(Nested Object)**는 지원하지 않습니다. (필요 시 사용자가 JSON 문자열 등으로 변환하여 전달)
+    - **중첩 객체(Nested Object)**는 지원하지 않으며, 전달 시 **예외(Exception)**를 발생시켜야 합니다.
     - `url`에 이미 쿼리 스트링이 존재하는 경우, `&`로 연결하여 병합합니다. (URL 끝의 `?`, `&` 중복 처리 필요)
     - **Hash(#) 처리**: URL에 Hash(Fragment)가 포함된 경우, Query String은 반드시 **Hash(#) 앞**에 삽입되어야 합니다.
     - **String / Native**: 문자열이나 `URLSearchParams` 등 네이티브 객체가 전달되면, 별도 변환 없이 그대로 쿼리 스트링으로 사용합니다.
@@ -40,6 +40,7 @@
 - **cookies**: (Optional) 요청과 함께 전송할 쿠키 객체 (Object/Dict).
     - `headers`의 `Cookie` 값과 병합됩니다.
     - **Precedence**: `headers`에 `Cookie` 헤더가 이미 존재하는 경우, `cookies` 객체는 직렬화되어 기존 `Cookie` 문자열 뒤에 `; `로 연결됩니다.
+    - **Browser Limitation**: 브라우저 환경에서는 보안 정책상 이 옵션이 무시될 수 있습니다. (`Cookie` 헤더는 Forbidden Header Name)
 - **data**: (Optional) Request Body (Object/Dict, String, Byte Array, Stream).
     - **GET, HEAD 메서드**: `data` 및 `files` 값이 존재하더라도 **무시(Ignored)**하고 전송하지 않습니다. (DELETE 등 그 외 메서드는 본문 전송 허용)
     - **Object/Dict**: 기본적으로 **JSON 직렬화** (`Content-Type: application/json` 자동 추가).
@@ -61,6 +62,7 @@
     - **보안**: Header Value에 줄바꿈 문자(`\n`, `\r`)가 포함된 경우, **예외(Exception)**를 발생시켜야 합니다. (HTTP Response Splitting 방지)
     - **Key Validation**: Header Key에 공백이나 제어 문자 등 HTTP 토큰으로 유효하지 않은 문자가 포함된 경우, **예외**를 발생시켜야 합니다.
     - **처리 규칙**: 라이브러리 내부에서 헤더를 병합하거나 덮어쓸 때, 키(Key)의 **대소문자를 구분하지 않고(Case-insensitive)** 처리해야 합니다. (예: 사용자가 `content-type`을 보내면, 라이브러리가 `Content-Type`을 중복해서 추가하지 않아야 함)
+    - **Browser Limitation**: 브라우저 환경에서는 보안 정책상 `Host`, `User-Agent`, `Content-Length` 등 특정 헤더(Forbidden Header Name) 설정이 무시될 수 있습니다.
 - **preserveHeaderCase**: (Optional) `true` 설정 시, 헤더 키의 대소문자를 정규화하지 않고 그대로 전송합니다. (기본값: `false`)
 - **timeout**: (Optional) 요청 타임아웃 (Number, ms 단위, 기본값: 5000 등 언어별 적절한 값). **(시간 초과 시 예외 발생, 0 설정 시 무제한)**
     - **Number**: 설정 시 **각 시도(Attempt)별** 제한 시간으로 동작합니다. (재시도 시 타이머 초기화)
@@ -70,6 +72,7 @@
         - `read`: 데이터 수신 대기 시간 (Socket Idle Timeout).
         - `total`: 전체 요청 제한 시간 (재시도 포함). **(이 값이 설정되면 `timeout`은 각 시도별 제한 시간으로 동작)**
         - **Stream Warning**: `responseType: 'stream'` 사용 시, `total`은 스트림 전송이 완료될 때까지의 시간을 제한하므로 주의해서 설정해야 합니다. (대용량 파일의 경우 `0` 권장)
+        - **Fallback**: 플랫폼이 세부 타임아웃을 지원하지 않는 경우, 라이브러리는 `total` 값을 단일 타임아웃으로 사용하거나, 여러 값이 있을 경우 가장 보수적인(짧은) 시간을 적용해야 합니다.
 - **maxHeaderSize**: (Optional) 응답 헤더의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 플랫폼별 기본값 또는 16KB)
 - **maxContentLength**: (Optional) 요청 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
 - **maxBodyLength**: (Optional) 응답 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
@@ -93,10 +96,11 @@
     - **Method Change**: `301`, `302`, `303` 응답 시, 리다이렉트 요청의 메서드는 **`GET`**으로 변경되며 요청 Body는 제거됩니다. (`307`, `308`은 메서드와 Body 유지)
     - `'error'`: 3xx 응답을 네트워크 오류로 처리합니다.
     - `'manual'`: 3xx 응답을 그대로 반환합니다. (상태 코드 확인 필요)
-    - **보안**: Cross-Domain 리다이렉트 시 `Authorization`, `Cookie` 헤더는 자동으로 **제거(Strip)**되어야 합니다.
+    - **보안**: Cross-Domain 리다이렉트 시 `Authorization`, `Cookie`, `Proxy-Authorization` 헤더는 자동으로 **제거(Strip)**되어야 합니다.
 - **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용. 브라우저 환경에서는 보안 정책에 따라 무시되거나 제한될 수 있음)
 - **retry**: (Optional) 실패 시 재시도 횟수 (Number, 기본값: 0).
     - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
+    - **Retry-After**: 429 또는 503 응답에 `Retry-After` 헤더가 포함된 경우, `retryDelay` 설정보다 우선하여 해당 시간만큼 대기 후 재시도해야 합니다.
 - **retryMethods**: (Optional) 재시도를 허용할 HTTP 메서드 배열 (String[], 기본값: `['GET', 'PUT', 'HEAD', 'DELETE', 'OPTIONS', 'TRACE']`).
     - **POST, PATCH** 등 비멱등(Non-idempotent) 메서드는 기본적으로 재시도하지 않습니다. (중복 처리 방지)
 - **retryCondition**: (Optional) 재시도 여부를 결정하는 커스텀 함수. `(error, retryCount) => boolean | Promise<boolean>`
@@ -139,7 +143,7 @@
     - `'arraybuffer'`: `'bytes'`와 동일 (Browser 호환성).
     - `'stream'`: 스트림(Stream) 객체로 반환. (대용량 파일 처리 시 필수)
     - `'blob'`: **Blob** 객체로 반환. (브라우저 환경 등 Blob API 지원 시)
-    - `'document'`: **HTML Document** 객체로 반환. (브라우저 환경 등 DOM Parser 지원 시)
+    - `'document'`: **HTML Document** 객체로 반환. (브라우저 환경 등 DOM Parser 지원 시. 지원하지 않는 환경에서는 **예외**를 발생시켜야 함)
 - **responseEncoding**: (Optional) 응답 텍스트 디코딩 시 사용할 인코딩 (String, 기본값: `'utf-8'`).
     - `responseType`이 `'text'`, `'json'`이거나 `'auto'`(텍스트로 판별됨)일 때 적용됩니다.
     - `responseType`이 `'stream'`, `'bytes'`, `'arraybuffer'`, `'blob'`인 경우, 이 설정은 **무시(Ignored)**됩니다. (항상 원본 바이너리 반환)
@@ -154,6 +158,7 @@
 - **xsrfHeaderName**: (Optional) CSRF 토큰을 담을 헤더 이름 (String, 기본값: `'X-XSRF-TOKEN'`). (브라우저 환경 전용)
 - **validateStatus**: (Optional) 성공(`ok: true`)으로 간주할 상태 코드 범위 지정 함수.
     - 기본값: `(status) => status >= 200 && status < 300`
+    - **Note**: 이 기본값에 따르면 `304 Not Modified`는 `ok: false`로 처리됩니다. 캐시 검증 시에는 `validateStatus`를 `(status) => (status >= 200 && status < 300) || status === 304` 와 같이 커스터마이징해야 할 수 있습니다.
 - **keepAlive**: (Optional) HTTP Keep-Alive 활성화 여부 (Boolean, 기본값: `true`). (성능 최적화)
     - `agent` 옵션이 설정된 경우, 이 값은 무시됩니다.
 - **http2**: (Optional) HTTP/2 사용 여부 (Boolean, 기본값: `false`). (지원하는 플랫폼에 한함)
@@ -226,6 +231,7 @@
 - **headers**: 응답 헤더 (Object). **모든 Key는 소문자(lowercase)로 정규화**됩니다.
     - 기본값: **String** (여러 값인 경우 `, `로 결합).
     - 예외: **`set-cookie`**는 **String[] (배열)** 형태로 반환해야 합니다. (쿠키 파싱 및 세션 관리를 위함. 단, 브라우저 환경에서는 보안상 접근 불가할 수 있음)
+        - **Note**: 브라우저 환경에서는 보안 정책상 `Set-Cookie` 헤더에 접근할 수 없으므로, 이 필드는 서버 환경에서만 유효합니다.
 - **ok**: 성공 여부 (Boolean, 200~299 사이면 true)
 
 ## 3. 에러 처리 (Error Handling)
@@ -282,6 +288,7 @@
     - `files`가 존재하여 `multipart/form-data`로 전송되는 경우, `data` 필드의 처리 규칙:
         - **제약 사항**: `data`는 반드시 **Plain Object**여야 합니다. (`FormData`, `URLSearchParams`, `Stream` 등 네이티브 객체와 혼용 불가)
         - **Key Collision**: `data`와 `files`에 동일한 키가 존재할 경우, 덮어쓰지 않고 **두 값 모두 전송(Multi-value)**됩니다.
+            - **Warning**: 이 경우 일부 서버 프레임워크는 파싱 에러를 일으키거나 하나의 값만 인식할 수 있습니다.
         - `null`, `undefined`: **제외(Omit)**합니다.
         - **배열(Array)**: `paramsArrayFormat` 설정에 따라 직렬화합니다. (기본값: 동일 Key 반복)
         - **Date 객체**: **ISO 8601** 문자열로 변환하여 전송합니다.
