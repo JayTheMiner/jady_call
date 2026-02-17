@@ -52,15 +52,17 @@
     - 이 값이 존재하면 `Content-Type` 헤더는 **사용자 설정 값을 무시하고** 자동으로 `multipart/form-data; boundary=...`로 설정됩니다.
 - **headers**: (Optional) HTTP 헤더 (Object/Dict).
     - **보안**: Header Value에 줄바꿈 문자(`\n`, `\r`)가 포함된 경우, **예외(Exception)**를 발생시켜야 합니다. (HTTP Response Splitting 방지)
+- **preserveHeaderCase**: (Optional) `true` 설정 시, 헤더 키의 대소문자를 정규화하지 않고 그대로 전송합니다. (기본값: `false`)
 - **timeout**: (Optional) 요청 타임아웃 (Number, ms 단위, 기본값: 5000 등 언어별 적절한 값). **(시간 초과 시 예외 발생, 0 설정 시 무제한)**
     - **Object**: 세부 타임아웃 설정 가능 (지원하는 플랫폼에 한함).
         - `connect`: 소켓 연결 대기 시간.
-        - `read`: 데이터 수신 대기 시간 (Socket Timeout).
+        - `read`: 데이터 수신 대기 시간 (Socket Idle Timeout).
         - `total`: 전체 요청 제한 시간 (기본 `timeout`과 동일).
 - **maxHeaderSize**: (Optional) 응답 헤더의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 플랫폼별 기본값 또는 16KB)
 - **maxContentLength**: (Optional) 요청 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
 - **maxBodyLength**: (Optional) 응답 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
     - `Content-Length` 헤더가 존재하면 이를 기준으로 미리 검사하고, 없으면 수신된 바이트 수를 기준으로 검사합니다.
+- **maxRate**: (Optional) 다운로드 대역폭 제한 (Number, bytes/sec). (지원하는 플랫폼에 한함)
 - **auth**: (Optional) 인증 정보 객체.
     - Basic Auth: `{ username: 'user', password: 'pw' }`
     - Bearer Token: `{ bearer: 'token_string' }` (헤더에 `Authorization: Bearer ...` 자동 추가)
@@ -71,6 +73,7 @@
     - `'follow'`: 3xx 응답을 자동으로 따라갑니다. (최대 10회)
     - `'error'`: 3xx 응답을 네트워크 오류로 처리합니다.
     - `'manual'`: 3xx 응답을 그대로 반환합니다. (상태 코드 확인 필요)
+    - **보안**: Cross-Domain 리다이렉트 시 `Authorization`, `Cookie` 헤더는 자동으로 **제거(Strip)**되어야 합니다.
 - **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용. 브라우저 환경에서는 보안 정책에 따라 무시되거나 제한될 수 있음)
 - **retry**: (Optional) 실패 시 재시도 횟수 (Number, 기본값: 0).
     - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
@@ -81,7 +84,8 @@
 - **localAddress**: (Optional) 요청을 보낼 로컬 네트워크 인터페이스의 IP 주소 (String). (IP Rotation, Multi-homed 서버 등에서 사용)
 - **proxy**: (Optional) 프록시 서버 설정 (String | Object).
     - **String**: `http://user:pass@proxy.com:8080`
-    - **Object**: `{ host: string, port: number, protocol?: string, auth?: { username: string, password: string } }`
+    - **Object**: `{ host: string, port: number, protocol?: string, auth?: { username: string, password: string }, headers?: Object }`
+        - `headers`: 프록시 서버로 보낼 커스텀 헤더 (예: `Proxy-Authorization` 수동 설정 등).
     - 주의: 브라우저 환경에서는 보안 정책상 무시될 수 있습니다.
 - **agent**: (Optional) HTTP 연결 풀링(Connection Pooling)을 위한 플랫폼별 에이전트 객체.
     - Node.js: `http.Agent` / `https.Agent` 또는 `{ http: Agent, https: Agent }` (프로토콜별 분리)
@@ -94,7 +98,10 @@
     - `ca`: 커스텀 CA 인증서 (String/Buffer).
     - `cert`: 클라이언트 인증서 (String/Buffer).
     - `key`: 클라이언트 개인키 (String/Buffer).
+    - `pfx`: 클라이언트 인증서 (PFX/PKCS12 포맷, String/Buffer).
     - `passphrase`: 개인키 비밀번호 (String).
+    - `ciphers`: 사용할 암호화 제품군 목록 (String).
+    - `servername`: SNI(Server Name Indication) 오버라이드 (String).
 - **responseType**: (Optional) 응답 데이터의 타입 지정 (String, 기본값: `'auto'`).
     - `'auto'`: `Content-Type`에 따라 JSON, Text, Binary 자동 처리.
     - `'json'`: 강제로 JSON 파싱 시도. (파싱 실패 시 `'EPARSE'` 예외 발생)
@@ -117,6 +124,7 @@
     - 기본값: `(status) => status >= 200 && status < 300`
 - **keepAlive**: (Optional) HTTP Keep-Alive 활성화 여부 (Boolean, 기본값: `true`). (성능 최적화)
     - `agent` 옵션이 설정된 경우, 이 값은 무시됩니다.
+- **http2**: (Optional) HTTP/2 사용 여부 (Boolean, 기본값: `false`). (지원하는 플랫폼에 한함)
 - **cache**: (Optional) 캐시 정책 (String, 기본값: `'default'`).
     - `'default'`, `'no-store'`, `'reload'`, `'no-cache'`, `'force-cache'`, `'only-if-cached'` (Fetch API 표준 준수)
 - **family**: (Optional) DNS 조회 시 사용할 IP 버전 (Number).
@@ -141,6 +149,7 @@
     - `afterResponse`: `(response) => response | Promise<response>` (응답 수신 후 실행)
     - `beforeError`: `(error) => error | Promise<error>` (에러 발생 시 실행)
     - `beforeRetry`: `(error, retryCount) => void | boolean | Promise<void | boolean>` (재시도 직전 실행. `false` 반환 시 재시도 중단)
+    - `beforeRedirect`: `(options, response) => void | Promise<void>` (리다이렉트 직전 실행. 헤더 수정 등에 사용)
 - **native**: (Optional) 언어/플랫폼별 전용 옵션 객체. (표준 옵션으로 커버되지 않는 기능 사용 시)
     - 예: `{ fetch: { mode: 'no-cors', keepalive: true }, node: { insecureHTTPParser: true }, py: { stream: true } }`
 
@@ -160,6 +169,7 @@
 - **url**: 최종 응답 URL (String). (리다이렉트가 발생한 경우 리다이렉트 된 최종 주소)
 - **history**: (Optional) 리다이렉트 기록 배열 (Array<Object>).
     - 리다이렉트가 발생했을 때, 이전 요청들에 대한 간략한 정보(`url`, `status`, `statusText`)를 포함합니다.
+- **request**: (Optional) 네이티브 요청 객체 (Object). (Node.js `ClientRequest`, Browser `XMLHttpRequest` 등)
 - **config**: 요청 시 사용된 설정 객체 (Object). (`meta` 포함)
 - **body**: 실제 응답 데이터.
     - `responseType` 설정이 최우선으로 적용됩니다.
@@ -214,6 +224,7 @@
     - `null`: **`null` 값 그대로 전송**합니다. (DB 필드 초기화 등의 목적)
     - **NaN, Infinity**: **`null`**로 변환합니다. (JSON 표준 준수)
     - **Large Integer (JS)**: JavaScript 환경에서 64-bit 정수(BigInt)는 `JSON.parse` 시 정밀도 손실이 발생할 수 있습니다. 이 경우 `responseType: 'text'` 사용을 권장합니다.
+    - **Empty Response**: `responseType: 'json'`일 때 응답 본문이 비어있으면(Length 0), **`null`**을 반환합니다. (파싱 에러 방지)
 - **Headers (`headers`)**:
     - `undefined`: **제외(Omit)**합니다. (기본 헤더가 있다면 적용됨)
     - `null`: **제거(Remove)**합니다. (기본 헤더가 있어도 전송하지 않음)
@@ -227,7 +238,7 @@
     - `files`가 존재하여 `multipart/form-data`로 전송되는 경우, `data` 필드의 처리 규칙:
         - **제약 사항**: `data`는 반드시 **Plain Object**여야 합니다. (`FormData`, `URLSearchParams`, `Stream` 등 네이티브 객체와 혼용 불가)
         - `null`, `undefined`: **제외(Omit)**합니다.
-        - **배열(Array)**: 동일한 Key로 여러 필드를 전송합니다. (예: `tags: ['a', 'b']` -> `tags=a`, `tags=b`)
+        - **배열(Array)**: `paramsArrayFormat` 설정에 따라 직렬화합니다. (기본값: 동일 Key 반복)
         - **Date 객체**: **ISO 8601** 문자열로 변환하여 전송합니다.
         - **Boolean 값**: 소문자 문자열 `"true"`, `"false"`로 변환하여 전송합니다.
         - **객체(Object)**: JSON 문자열로 변환하여 전송합니다.
