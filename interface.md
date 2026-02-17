@@ -42,7 +42,7 @@
 - **cookieMode**: (Optional) 쿠키 처리 방식을 정의하는 모드 (String, 기본값: `'none'`).
     - `'none'`: 쿠키를 자동으로 처리하지 않습니다. `headers.Cookie`를 통해 수동으로만 설정할 수 있습니다.
     - `'browser'`: 브라우저의 내장 쿠키 메커니즘을 사용합니다. `withCredentials` 옵션의 영향을 받습니다. (브라우저 환경 전용)
-    - `'manual'`: `cookies` 옵션에 명시된 객체를 직렬화하여 `Cookie` 헤더를 생성합니다. (서버 환경 전용)
+    - `'manual'`: `platform.cookies` 옵션에 명시된 객체를 직렬화하여 `Cookie` 헤더를 생성합니다. (서버 환경 전용)
 - **data**: (Optional) Request Body (Object/Dict, String, Byte Array, Stream).
     - **GET, HEAD 메서드**: `data` 및 `files` 값이 존재하더라도 **무시(Ignored)**하고 전송하지 않습니다. (DELETE 등 그 외 메서드는 본문 전송 허용)
     - **Object/Dict**: 기본적으로 **JSON 직렬화** (`Content-Type: application/json` 자동 추가).
@@ -127,11 +127,6 @@
     - **Note**: 이 기본값에 따르면 `304 Not Modified`는 `ok: false`로 처리됩니다. 캐시 검증 시에는 `validateStatus`를 `(status) => (status >= 200 && status < 300) || status === 304` 와 같이 커스터마이징해야 할 수 있습니다.
 - **cache**: (Optional) 캐시 정책 (String, 기본값: `'default'`).
     - `'default'`, `'no-store'`, `'reload'`, `'no-cache'`, `'force-cache'`, `'only-if-cached'` (Fetch API 표준 준수)
-- **family**: (Optional) DNS 조회 시 사용할 IP 버전 (Number).
-    - `4`: IPv4만 사용.
-    - `6`: IPv6만 사용.
-    - `0`: 둘 다 사용 (기본값).
-- **lookup**: (Optional) 커스텀 DNS 조회 함수/인터페이스. (언어별 DNS 해석 로직 주입)
 - **priority**: (Optional) 요청의 우선순위 (String, 기본값: `'auto'`). (Fetch API 표준 준수)
     - `'high'`, `'low'`, `'auto'`
 - **integrity**: (Optional) 리소스 무결성 검증을 위한 해시값 (String). (예: `sha384-...`) (Fetch API 표준 준수)
@@ -171,6 +166,8 @@
     - **`blockPrivateIP`**: 사설 IP 대역 요청 차단 여부 (Boolean).
     - **`socketPath`**: Unix Domain Socket 경로 (String).
     - **`localAddress`**: 로컬 네트워크 인터페이스 IP 주소 (String).
+    - **`family`**: DNS 조회 시 사용할 IP 버전 (Number: `4`, `6`, `0`).
+    - **`lookup`**: 커스텀 DNS 조회 함수/인터페이스.
     - **`preserveHeaderCase`**: 헤더 키 대소문자 유지 여부 (Boolean).
     - **`referrer`**: Referer 헤더 값 (String).
     - **`referrerPolicy`**: Referrer 정책 (String).
