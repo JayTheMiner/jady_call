@@ -57,13 +57,13 @@
     - Basic Auth: `{ username: 'user', password: 'pw' }`
     - Bearer Token: `{ bearer: 'token_string' }` (헤더에 `Authorization: Bearer ...` 자동 추가)
     - 주의: `headers`에 `Authorization` 값이 이미 존재하면, 이 옵션은 **무시**됩니다.
-- **withCredentials**: (Optional) Cross-Origin 요청 시 쿠키/인증 헤더 포함 여부 (Boolean, 기본값: `false`). (주로 브라우저 환경용)
+- **withCredentials**: (Optional) Cross-Origin 요청 시 쿠키/인증 헤더 포함 여부 (Boolean, 기본값: `false`). (브라우저 Fetch API의 `credentials: 'include'`에 대응)
 - **verify**: (Optional) SSL/TLS 인증서 검증 여부 (Boolean, 기본값: `true`).
 - **redirect**: (Optional) 리다이렉션 처리 방식 (String, 기본값: `'follow'`).
     - `'follow'`: 3xx 응답을 자동으로 따라갑니다. (최대 10회)
     - `'error'`: 3xx 응답을 네트워크 오류로 처리합니다.
     - `'manual'`: 3xx 응답을 그대로 반환합니다. (상태 코드 확인 필요)
-- **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용)
+- **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용. 브라우저 환경에서는 보안 정책에 따라 무시되거나 제한될 수 있음)
 - **retry**: (Optional) 실패 시 재시도 횟수 (Number, 기본값: 0).
     - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number, ms 단위, 기본값: 0).
@@ -97,6 +97,7 @@
 - **jsonReviver**: (Optional) JSON 파싱 시 사용할 변환 함수. (JS: `JSON.parse`의 reviver, Python: `object_hook` 등 매핑)
 - **decompress**: (Optional) 응답 본문 자동 압축 해제 여부 (Boolean, 기본값: `true`).
     - `false`로 설정 시, 압축된 바이너리 데이터가 그대로 `body`에 반환됩니다. (다운로드 등에 사용)
+    - `true` 설정 시(기본값), `Accept-Encoding: gzip, deflate, br` 헤더가 자동으로 포함됩니다.
 - **xsrfCookieName**: (Optional) CSRF 토큰을 읽어올 쿠키 이름 (String, 기본값: `'XSRF-TOKEN'`). (브라우저 환경 전용)
 - **xsrfHeaderName**: (Optional) CSRF 토큰을 담을 헤더 이름 (String, 기본값: `'X-XSRF-TOKEN'`). (브라우저 환경 전용)
 - **validateStatus**: (Optional) 성공(`ok: true`)으로 간주할 상태 코드 범위 지정 함수.
@@ -115,7 +116,7 @@
 - **integrity**: (Optional) 리소스 무결성 검증을 위한 해시값 (String). (예: `sha384-...`) (Fetch API 표준 준수)
 - **signal**: (Optional) 요청 취소를 위한 시그널 객체. (JS: `AbortSignal`, Python/Java: Cancellation Token/Context 등 언어별 표준 취소 메커니즘 매핑)
 - **onUploadProgress**: (Optional) 업로드 진행률 콜백 함수. `(progressEvent) => void`
-    - `progressEvent`: `{ loaded: number, total?: number }`
+    - `progressEvent`: `{ loaded: number, total?: number }` (브라우저 환경의 경우 XHR을 사용하거나, Fetch 스트림 지원이 필요할 수 있음)
 - **onDownloadProgress**: (Optional) 다운로드 진행률 콜백 함수. `(progressEvent) => void`
     - `progressEvent`: `{ loaded: number, total?: number }`
 - **meta**: (Optional) 사용자 정의 메타데이터 (Object/Dict).
