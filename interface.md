@@ -5,6 +5,8 @@
 ## 0. 기본 원칙 (General Principles)
 
 - **Asynchronous**: 모든 구현체는 기본적으로 **비동기(Async)** 동작을 지향해야 합니다. (Return Promise, Future, Coroutine, etc.)
+- **Semantic Consistency**: **동일한 설정(Config)은 어떤 언어/플랫폼에서 실행되든 동일한 의미(Semantics)와 동일한 HTTP 요청 결과를 보장해야 합니다.**
+    - 이를 위해, 플랫폼에 따라 동작이 달라지거나 구현이 불가능한 기능은 **`platform`** 객체 아래로 분리하여 명시적으로 사용하도록 합니다.
 - **Stateless**: `jady.call`은 상태를 가지지 않는 순수 함수(Pure Function) 혹은 정적 메서드(Static Method)처럼 동작해야 합니다.
     - **No Cookie Jar**: 이전 요청의 `Set-Cookie`를 저장하거나 다음 요청에 자동으로 포함하지 않습니다. (브라우저의 기본 동작은 예외)
 
@@ -37,10 +39,10 @@
     - 이 값이 설정되면 `paramsArrayFormat`은 무시됩니다.
     - 반환값은 맨 앞의 `?`를 포함하지 않아야 합니다.
     - 빈 문자열을 반환하는 경우, URL 끝에 `?`를 붙이지 않아야 합니다.
-- **cookies**: (Optional) 요청과 함께 전송할 쿠키 객체 (Object/Dict).
-    - `headers`의 `Cookie` 값과 병합됩니다.
-    - **Precedence**: `headers`에 `Cookie` 헤더가 이미 존재하는 경우, `cookies` 객체는 직렬화되어 기존 `Cookie` 문자열 뒤에 `; `로 연결됩니다.
-    - **Browser Limitation**: 브라우저 환경에서는 보안 정책상 이 옵션이 무시될 수 있습니다. (`Cookie` 헤더는 Forbidden Header Name)
+- **cookieMode**: (Optional) 쿠키 처리 방식을 정의하는 모드 (String, 기본값: `'none'`).
+    - `'none'`: 쿠키를 자동으로 처리하지 않습니다. `headers.Cookie`를 통해 수동으로만 설정할 수 있습니다.
+    - `'browser'`: 브라우저의 내장 쿠키 메커니즘을 사용합니다. `withCredentials` 옵션의 영향을 받습니다. (브라우저 환경 전용)
+    - `'manual'`: `cookies` 옵션에 명시된 객체를 직렬화하여 `Cookie` 헤더를 생성합니다. (서버 환경 전용)
 - **data**: (Optional) Request Body (Object/Dict, String, Byte Array, Stream).
     - **GET, HEAD 메서드**: `data` 및 `files` 값이 존재하더라도 **무시(Ignored)**하고 전송하지 않습니다. (DELETE 등 그 외 메서드는 본문 전송 허용)
     - **Object/Dict**: 기본적으로 **JSON 직렬화** (`Content-Type: application/json` 자동 추가).
@@ -50,6 +52,7 @@
     - **Stream**: (Readable Stream, File-like Object) 메모리에 적재하지 않고 스트리밍 전송 (`Content-Type` 미지정 시 `application/octet-stream` 자동 추가).
     - **Form Data (`application/x-www-form-urlencoded`)**: `data`가 객체이고 헤더가 설정된 경우, `params`의 직렬화 규칙(`paramsArrayFormat`, `paramsSerializer`)을 따릅니다.
     - **Native Objects**: `FormData`, `URLSearchParams` (JS) 등 언어별 네이티브 객체가 전달되면, 별도 변환 없이 그대로 전송하며 적절한 `Content-Type`을 자동으로 설정합니다.
+        - **Warning**: 이 기능은 편의를 위한 것이나, `multipart/form-data`의 `boundary` 생성 방식 등 플랫폼별 차이로 인해 HMAC 검증 실패 등 예측 불가능한 결과를 초래할 수 있으므로 표준 환경에서는 사용을 권장하지 않습니다.
         - 이 경우, 사용자가 `headers`에 명시한 `Content-Type`은 **무시**됩니다. (네이티브 객체의 타입이 우선함)
 - **files**: (Optional) 파일 업로드 객체 (Multipart/form-data).
     - Key: Field Name, Value: File Object / Blob / Stream / Path(Server-side only) **또는 그 배열(Array)**.
@@ -63,24 +66,11 @@
     - **Key Validation**: Header Key에 공백이나 제어 문자 등 HTTP 토큰으로 유효하지 않은 문자가 포함된 경우, **예외**를 발생시켜야 합니다.
     - **처리 규칙**: 라이브러리 내부에서 헤더를 병합하거나 덮어쓸 때, 키(Key)의 **대소문자를 구분하지 않고(Case-insensitive)** 처리해야 합니다. (예: 사용자가 `content-type`을 보내면, 라이브러리가 `Content-Type`을 중복해서 추가하지 않아야 함)
     - **Browser Limitation**: 브라우저 환경에서는 보안 정책상 `Host`, `User-Agent`, `Content-Length` 등 특정 헤더(Forbidden Header Name) 설정이 무시될 수 있습니다.
-- **preserveHeaderCase**: (Optional) `true` 설정 시, 헤더 키의 대소문자를 정규화하지 않고 그대로 전송합니다. (기본값: `false`)
-- **timeout**: (Optional) 요청 타임아웃 (Number, ms 단위, 기본값: 5000 등 언어별 적절한 값). **(시간 초과 시 예외 발생, 0 설정 시 무제한)**
-    - **Number**: 설정 시 **각 시도(Attempt)별** 제한 시간으로 동작합니다. (재시도 시 타이머 초기화)
-    - **Object**: 세부 타임아웃 설정 가능 (지원하는 플랫폼에 한함).
-        - `connect`: 소켓 연결 대기 시간.
-        - `write`: 데이터 전송(Upload) 대기 시간. (대용량 업로드 시 유용)
-        - `read`: 데이터 수신 대기 시간 (Socket Idle Timeout).
-        - `total`: 전체 요청 제한 시간 (재시도 포함). **(이 값이 설정되면 `timeout`은 각 시도별 제한 시간으로 동작)**
-        - **Stream Warning**: `responseType: 'stream'` 사용 시, `total`은 스트림 전송이 완료될 때까지의 시간을 제한하므로 주의해서 설정해야 합니다. (대용량 파일의 경우 `0` 권장)
-        - **Fallback**: 플랫폼이 세부 타임아웃을 지원하지 않는 경우, 라이브러리는 `total` 값을 단일 타임아웃으로 사용하거나, 여러 값이 있을 경우 가장 보수적인(짧은) 시간을 적용해야 합니다.
-- **maxHeaderSize**: (Optional) 응답 헤더의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 플랫폼별 기본값 또는 16KB)
-- **maxContentLength**: (Optional) 요청 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
-- **maxBodyLength**: (Optional) 응답 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
-    - `Content-Length` 헤더가 존재하면 이를 기준으로 미리 검사하고, 없으면 수신된 바이트 수를 기준으로 검사합니다.
-    - `responseType`이 `'stream'`인 경우, 이 설정은 **무시(Ignored)**되거나 플랫폼 구현에 따라 적용되지 않을 수 있습니다.
-- **maxRate**: (Optional) 다운로드 대역폭 제한 (Number, bytes/sec). (지원하는 플랫폼에 한함)
-- **expect100**: (Optional) `true` 설정 시, `Expect: 100-continue` 헤더를 전송하고 서버 승인 후 본문을 전송합니다. (대용량 업로드 시 대역폭 절약)
-- **blockPrivateIP**: (Optional) `true` 설정 시, DNS 조회 결과가 사설 IP(Private IP) 대역인 경우 요청을 차단합니다. (SSRF 방지)
+- **timeout**: (Optional) 응답 수신 대기 시간 (Number, ms 단위, 기본값: 30000). **(시간 초과 시 `'ETIMEDOUT'` 예외 발생, 0 설정 시 무제한)**
+    - **의미**: 소켓 연결 후, 서버로부터 첫 바이트(TTFB)를 포함한 응답 데이터가 수신되기 시작하는 것을 기다리는 시간 (Idle Timeout)입니다. 이는 모든 플랫폼에서 가장 일관되게 구현 가능한 시간 제한입니다.
+- **totalTimeout**: (Optional) 요청의 전체 수명 주기 제한 시간 (Number, ms 단위, 기본값: 0).
+    - **의미**: DNS 조회, 연결, 요청 전송, 재시도, 리다이렉트를 포함한 모든 과정이 이 시간 내에 완료되어야 함을 의미합니다. 라이브러리는 이 시간 제한을 반드시 준수해야 합니다.
+    - `0`은 무제한을 의미합니다.
 - **saveRawBody**: (Optional) `true` 설정 시, 파싱된 `body` 외에 원본 텍스트/버퍼를 `rawBody` 필드로 응답 객체에 포함합니다. (HMAC 검증 등에 사용)
     - `responseType`이 `'stream'`인 경우, 이 옵션은 **무시(Ignored)**됩니다. (스트림은 버퍼링되지 않음)
 - **requestId**: (Optional) 요청 식별자 (String). (설정하지 않으면 UUID 등을 자동 생성하여 할당 권장)
@@ -89,54 +79,30 @@
     - Bearer Token: `{ bearer: 'token_string' }` (헤더에 `Authorization: Bearer ...` 자동 추가)
     - 주의: `headers`에 `Authorization` 값이 이미 존재하면, 이 옵션은 **무시**됩니다.
     - **Ambiguity**: Basic, Bearer 등 여러 인증 타입을 동시에 지정하면 **예외**를 발생시켜야 합니다.
-- **withCredentials**: (Optional) Cross-Origin 요청 시 쿠키/인증 헤더 포함 여부 (Boolean, 기본값: `false`). (브라우저 Fetch API의 `credentials: 'include'`에 대응)
-- **verify**: (Optional) SSL/TLS 인증서 검증 여부 (Boolean, 기본값: `true`).
+- **withCredentials**: (Optional) `cookieMode: 'browser'`일 때, Cross-Origin 요청에 쿠키/인증 헤더를 포함할지 여부 (Boolean, 기본값: `false`). (Fetch API의 `credentials: 'include'`에 대응)
 - **redirect**: (Optional) 리다이렉션 처리 방식 (String, 기본값: `'follow'`).
     - `'follow'`: 3xx 응답을 자동으로 따라갑니다. (최대 10회)
     - **Method Change**: `301`, `302`, `303` 응답 시, 리다이렉트 요청의 메서드는 **`GET`**으로 변경되며 요청 Body는 제거됩니다. (`307`, `308`은 메서드와 Body 유지)
     - `'error'`: 3xx 응답을 네트워크 오류로 처리합니다.
     - `'manual'`: 3xx 응답을 그대로 반환합니다. (상태 코드 확인 필요)
-    - **보안**: Cross-Domain 리다이렉트 시 `Authorization`, `Cookie`, `Proxy-Authorization` 헤더는 자동으로 **제거(Strip)**되어야 합니다.
+    - **보안 (서버 환경 요구사항)**: 서버 환경 구현체는 Cross-Domain 리다이렉트 시 `Authorization`, `Cookie`, `Proxy-Authorization` 헤더를 자동으로 **제거(Strip)**해야 합니다. 브라우저에서는 이 동작을 제어할 수 없습니다.
 - **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용. 브라우저 환경에서는 보안 정책에 따라 무시되거나 제한될 수 있음)
 - **retry**: (Optional) 실패 시 재시도 횟수 (Number, 기본값: 0).
     - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
-    - **Retry-After**: 429 또는 503 응답에 `Retry-After` 헤더가 포함된 경우, `retryDelay` 설정보다 우선하여 해당 시간만큼 대기 후 재시도해야 합니다.
-- **retryMethods**: (Optional) 재시도를 허용할 HTTP 메서드 배열 (String[], 기본값: `['GET', 'PUT', 'HEAD', 'DELETE', 'OPTIONS', 'TRACE']`).
-    - **POST, PATCH** 등 비멱등(Non-idempotent) 메서드는 기본적으로 재시도하지 않습니다. (중복 처리 방지)
+    - **Retry-After**: 429 또는 503 응답에 `Retry-After` 헤더가 포함된 경우, `retryDelay` 설정보다 우선하여 해당 시간만큼 대기 후 재시도해야 합니다. (초 단위, HTTP-Date 형식 모두 지원해야 함)
+    - **Timeout 충돌**: `Retry-After` 대기 시간이 남은 `totalTimeout`을 초과할 경우, 재시도하지 않고 즉시 **`'ETIMEDOUT'`** 예외를 발생시켜야 합니다.
 - **retryCondition**: (Optional) 재시도 여부를 결정하는 커스텀 함수. `(error, retryCount) => boolean | Promise<boolean>`
-    - 이 함수가 설정되면 `retryMethods` 및 기본 상태 코드 검사는 무시되고, 이 함수의 반환값에 따라 재시도합니다.
+    - 이 함수는 기본 재시도 조건(네트워크 오류, 5xx 등)에 **추가**로 적용됩니다. `false`를 반환하면 기본 조건에 해당하더라도 재시도를 중단합니다.
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number | Function, ms 단위, 기본값: 0).
     - **Number**: 고정 대기 시간.
     - **Function**: `(retryCount, error) => number` (지수 백오프 등 동적 계산 가능).
-- **socketPath**: (Optional) Unix Domain Socket 경로 (String). (설정 시 `url`의 호스트 부분은 무시됨. 예: `/var/run/docker.sock` 또는 Windows Named Pipe `\\.\pipe\name`)
-- **localAddress**: (Optional) 요청을 보낼 로컬 네트워크 인터페이스의 IP 주소 (String). (IP Rotation, Multi-homed 서버 등에서 사용)
-- **proxy**: (Optional) 프록시 서버 설정 (String | Object).
-    - **String**: `http://user:pass@proxy.com:8080`
-    - **Object**: `{ host: string, port: number, protocol?: string, auth?: { username: string, password: string }, headers?: Object, noProxy?: String[] }`
-        - `headers`: 프록시 서버로 보낼 커스텀 헤더 (예: `Proxy-Authorization` 수동 설정 등).
-        - `noProxy`: 프록시를 거치지 않을 도메인 목록 (예: `['localhost', '.internal']`).
-        - **Precedence**: `host` 문자열에 포함된 인증 정보보다 `auth` 필드의 설정이 우선합니다.
-    - **Boolean (`false`)**: 시스템 프록시 설정을 무시하고 직접 연결을 강제합니다.
-    - 주의: 브라우저 환경에서는 보안 정책상 무시될 수 있습니다.
-- **agent**: (Optional) HTTP 연결 풀링(Connection Pooling)을 위한 플랫폼별 에이전트 객체.
-    - Node.js: `http.Agent` / `https.Agent` 또는 `{ http: Agent, https: Agent }` (프로토콜별 분리)
-    - Java: `OkHttpClient` 인스턴스
-    - Python: `Session` 객체 등
-    - **주의**: 이 옵션이 설정되면 `proxy`, `ssl`, `keepAlive`, `localAddress`, `family` 등 연결 관련 옵션은 **무시**됩니다. (에이전트의 설정이 우선함)
 - **adapter**: (Optional) 실제 네트워크 요청을 수행하는 커스텀 어댑터 함수. `(config) => Promise<Response>`
     - Mocking, 테스팅, 혹은 특수한 프로토콜 처리를 위해 내부 로직을 대체할 때 사용합니다.
-- **ssl**: (Optional) SSL/TLS 설정 객체 (Browser 환경에서는 무시됨).
-    - `ca`: 커스텀 CA 인증서 (String/Buffer).
-    - `cert`: 클라이언트 인증서 (String/Buffer).
-    - `key`: 클라이언트 개인키 (String/Buffer).
-    - `pfx`: 클라이언트 인증서 (PFX/PKCS12 포맷, String/Buffer).
-    - `passphrase`: 개인키 비밀번호 (String).
-    - `ciphers`: 사용할 암호화 제품군 목록 (String).
-    - `servername`: SNI(Server Name Indication) 오버라이드 (String).
-    - `minVersion`: TLS 최소 버전 (String). (예: `'TLSv1.2'`)
-    - `maxVersion`: TLS 최대 버전 (String). (예: `'TLSv1.3'`)
 - **responseType**: (Optional) 응답 데이터의 타입 지정 (String, 기본값: `'auto'`).
-    - `'auto'`: `Content-Type`에 따라 JSON, Text, Binary 자동 처리.
+    - `'auto'`: 아래의 **결정론적 규칙**에 따라 JSON, Text, Binary 자동 처리.
+        - 1. `Content-Type` 헤더가 `application/json`이거나 `+json` 접미사(예: `application/problem+json`)를 포함하면 **JSON**으로 처리.
+        - 2. 위 조건에 해당하지 않고, `Content-Type`이 `text/`로 시작하거나 `application/xml`, `application/javascript` 등 명백한 텍스트 타입이면 **Text**로 처리.
+        - 3. 그 외의 모든 경우는 **Binary**로 처리.
     - `'json'`: 강제로 JSON 파싱 시도. (파싱 실패 시 `'EPARSE'` 예외 발생)
     - `'text'`: 강제로 텍스트로 반환.
     - `'bytes'`: Binary Data (Buffer/Bytes)로 반환.
@@ -159,10 +125,6 @@
 - **validateStatus**: (Optional) 성공(`ok: true`)으로 간주할 상태 코드 범위 지정 함수.
     - 기본값: `(status) => status >= 200 && status < 300`
     - **Note**: 이 기본값에 따르면 `304 Not Modified`는 `ok: false`로 처리됩니다. 캐시 검증 시에는 `validateStatus`를 `(status) => (status >= 200 && status < 300) || status === 304` 와 같이 커스터마이징해야 할 수 있습니다.
-- **keepAlive**: (Optional) HTTP Keep-Alive 활성화 여부 (Boolean, 기본값: `true`). (성능 최적화)
-    - `agent` 옵션이 설정된 경우, 이 값은 무시됩니다.
-- **http2**: (Optional) HTTP/2 사용 여부 (Boolean, 기본값: `false`). (지원하는 플랫폼에 한함)
-    - `true` 설정 시 ALPN(Application-Layer Protocol Negotiation)을 통해 HTTP/2 연결을 시도하며, 서버가 지원하지 않는 경우 **HTTP/1.1로 자동 폴백(Fallback)**되어야 합니다.
 - **cache**: (Optional) 캐시 정책 (String, 기본값: `'default'`).
     - `'default'`, `'no-store'`, `'reload'`, `'no-cache'`, `'force-cache'`, `'only-if-cached'` (Fetch API 표준 준수)
 - **family**: (Optional) DNS 조회 시 사용할 IP 버전 (Number).
@@ -170,8 +132,6 @@
     - `6`: IPv6만 사용.
     - `0`: 둘 다 사용 (기본값).
 - **lookup**: (Optional) 커스텀 DNS 조회 함수/인터페이스. (언어별 DNS 해석 로직 주입)
-- **referrer**: (Optional) 요청 헤더의 Referer 값 (String).
-- **referrerPolicy**: (Optional) Referrer 정책 (String). (예: `'no-referrer'`, `'origin'`, `'unsafe-url'` 등)
 - **priority**: (Optional) 요청의 우선순위 (String, 기본값: `'auto'`). (Fetch API 표준 준수)
     - `'high'`, `'low'`, `'auto'`
 - **integrity**: (Optional) 리소스 무결성 검증을 위한 해시값 (String). (예: `sha384-...`) (Fetch API 표준 준수)
@@ -194,10 +154,28 @@
         - `Config` 객체 반환: 해당 설정으로 다음 재시도를 수행합니다. (프록시 교체 등)
         - **주의**: `Config`를 반환해도 `retryCount`는 초기화되지 않으며, 재시도 정책(횟수, 딜레이)은 원래 `Config`를 따릅니다.
     - `beforeRedirect`: `(options, response) => void | Promise<void>` (리다이렉트 직전 실행. 헤더 수정 등에 사용)
-- **trace**: (Optional) 상세 디버깅을 위한 이벤트 콜백 함수. `(event, info) => void`
-    - Events: `'lookup'`, `'connect'`, `'socket'`, `'upload'`, `'download'`, `'end'` 등.
-- **native**: (Optional) 언어/플랫폼별 전용 옵션 객체. (표준 옵션으로 커버되지 않는 기능 사용 시)
-    - 예: `{ fetch: { mode: 'no-cors', keepalive: true }, node: { insecureHTTPParser: true }, py: { stream: true } }`
+- **platform**: (Optional) 플랫폼별 특화 기능 및 저수준 제어 옵션 객체. 이 객체에 포함된 옵션들은 모든 플랫폼에서 동일한 동작을 보장하지 않습니다.
+    - **`cookies`**: `cookieMode: 'manual'`일 때, 요청과 함께 전송할 쿠키 객체 (Object/Dict).
+    - **`timeout`**: 세부 타임아웃 설정 객체.
+        - `connect`: 소켓 연결 대기 시간 (Number, ms).
+        - `write`: 데이터 전송(Upload) 대기 시간 (Number, ms).
+    - **`proxy`**: 프록시 서버 설정 (String | Object | `false`).
+        - `false` 설정 시 시스템 프록시를 무시하고 직접 연결합니다.
+    - **`ssl`**: SSL/TLS 설정 객체. (`ca`, `cert`, `key` 등)
+    - **`agent`**: HTTP 연결 풀링을 위한 플랫폼별 에이전트 객체.
+    - **`http2`**: HTTP/2 사용 여부 (Boolean).
+    - **`keepAlive`**: HTTP Keep-Alive 활성화 여부 (Boolean).
+    - **`maxHeaderSize`**: 응답 헤더의 최대 크기 제한 (Number, bytes).
+    - **`maxContentLength`**: 요청 본문의 최대 크기 제한 (Number, bytes).
+    - **`maxBodyLength`**: 응답 본문의 최대 크기 제한 (Number, bytes).
+    - **`blockPrivateIP`**: 사설 IP 대역 요청 차단 여부 (Boolean).
+    - **`socketPath`**: Unix Domain Socket 경로 (String).
+    - **`localAddress`**: 로컬 네트워크 인터페이스 IP 주소 (String).
+    - **`preserveHeaderCase`**: 헤더 키 대소문자 유지 여부 (Boolean).
+    - **`referrer`**: Referer 헤더 값 (String).
+    - **`referrerPolicy`**: Referrer 정책 (String).
+    - **`trace`**: 상세 디버깅 이벤트 콜백 함수.
+    - **`native`**: 각 언어/런타임의 고유 옵션을 담는 객체.
 
 ## 2. 표준 응답 구조 (The Output)
 
@@ -205,7 +183,8 @@
 
 - **status**: HTTP 상태 코드 (Number)
 - **statusText**: HTTP 상태 메시지 (String). (예: "OK", "Not Found")
-- **duration**: 요청 시작부터 응답 완료까지 걸린 시간 (Number, ms 단위).
+- **duration**: **마지막 시도**의 요청 시작부터 응답 완료까지 걸린 순수 시간 (Number, ms 단위).
+- **totalDuration**: **최초 요청** 시작부터 최종 응답 완료까지 걸린 총 시간 (Number, ms 단위). (재시도, 리다이렉트 시간 포함)
 - **timings**: (Optional) 구간별 소요 시간 정보 (Object, ms 단위). (지원하는 플랫폼에 한함)
     - `dns`: DNS 조회 시간.
     - `connect`: TCP 연결 시간 (SSL 핸드셰이크 포함).
@@ -213,8 +192,8 @@
     - `wait`: 서버 응답 대기 시간 (TTFB).
     - `receive`: 데이터 수신 시간.
 - **url**: 최종 응답 URL (String). (리다이렉트가 발생한 경우 리다이렉트 된 최종 주소)
-- **history**: (Optional) 리다이렉트 기록 배열 (Array<Object>).
-    - 리다이렉트가 발생했을 때, 이전 요청들에 대한 간략한 정보(`url`, `status`, `statusText`)를 포함합니다.
+- **attempts**: (Array<Object>) 리다이렉트와 재시도를 포함한 모든 시도 기록.
+    - 각 요소는 `url`, `status`, `duration` 등을 포함하는 간략한 응답/에러 객체입니다.
 - **request**: (Optional) 네이티브 요청 객체 (Object). (Node.js `ClientRequest`, Browser `XMLHttpRequest` 등)
 - **config**: 요청 시 사용된 설정 객체 (Object). (`meta` 포함)
 - **body**: 실제 응답 데이터.
@@ -231,7 +210,7 @@
 - **headers**: 응답 헤더 (Object). **모든 Key는 소문자(lowercase)로 정규화**됩니다.
     - 기본값: **String** (여러 값인 경우 `, `로 결합).
     - 예외: **`set-cookie`**는 **String[] (배열)** 형태로 반환해야 합니다. (쿠키 파싱 및 세션 관리를 위함. 단, 브라우저 환경에서는 보안상 접근 불가할 수 있음)
-        - **Note**: 브라우저 환경에서는 보안 정책상 `Set-Cookie` 헤더에 접근할 수 없으므로, 이 필드는 서버 환경에서만 유효합니다.
+        - **Note**: 브라우저 환경에서는 보안 정책상 `Set-Cookie` 헤더에 접근할 수 없으므로, 이 필드는 **서버 환경에서만 유효**합니다.
 - **ok**: 성공 여부 (Boolean, 200~299 사이면 true)
 
 ## 3. 에러 처리 (Error Handling)
@@ -242,8 +221,7 @@
     - `'ETIMEDOUT'`: 요청 타임아웃.
     - `'ECANCELED'`: 요청 취소 (Signal).
     - `'ENETWORK'`: 네트워크 연결 실패.
-    - `'EPARSE'`: 응답 데이터 파싱 실패 (`responseType: 'json'` 등).
-    - `'EMAXSIZE'`: 응답 본문 크기 제한 초과.
+    - `'EPARSE'`: 응답 데이터 파싱 실패.
     - `'EMAXREDIRECTS'`: 리다이렉트 횟수 초과.
 - **에러 객체 구조 (Error Object Structure)**:
     - `code`: 표준 에러 코드 (String).
@@ -265,7 +243,7 @@
     - **빈 배열(`[]`)**: **제외(Omit)**합니다.
     - **빈 문자열(`""`)**: `key=` 형태로 전송합니다.
     - **배열 내부**의 `null`, `undefined` 값도 **제외**합니다. (예: `[1, null, 2]` -> `key=1&key=2`)
-    - **Date 객체**: **ISO 8601** 문자열(`YYYY-MM-DDTHH:mm:ss.sssZ`)로 변환합니다.
+    - **Date 객체**: **ISO 8601** 문자열(`YYYY-MM-DDTHH:mm:ss.sssZ`)로 변환합니다. (URL-safe 해야 함)
     - **Number**: 문자열로 변환합니다. (예: `123` -> `"123"`)
     - `true`, `false`: 문자열 `"true"`, `"false"`로 변환합니다.
 - **JSON Body (`data`)**:
@@ -295,10 +273,3 @@
         - **Boolean 값**: 소문자 문자열 `"true"`, `"false"`로 변환하여 전송합니다.
         - **객체(Object)**: JSON 문자열로 변환하여 전송합니다.
         - 그 외: 문자열로 변환하여 전송합니다.
-
-## 6. 환경 및 기본값 (Environment & Defaults)
-
-- **System Proxy**: `proxy` 옵션이 지정되지 않은 경우, 시스템 환경 변수(`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`)를 자동으로 감지하여 적용해야 합니다. (브라우저 환경 제외)
-- **Default Headers**:
-    - **Accept**: 명시되지 않은 경우 `application/json, text/plain, */*`을 기본으로 전송합니다. (브라우저 환경 제외)
-    - **User-Agent**: `jady-call` 식별자를 포함하는 것을 권장합니다. (브라우저 환경 제외)
