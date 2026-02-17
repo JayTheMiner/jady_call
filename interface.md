@@ -57,8 +57,10 @@
         - `connect`: 소켓 연결 대기 시간.
         - `read`: 데이터 수신 대기 시간 (Socket Timeout).
         - `total`: 전체 요청 제한 시간 (기본 `timeout`과 동일).
+- **maxHeaderSize**: (Optional) 응답 헤더의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 플랫폼별 기본값 또는 16KB)
 - **maxContentLength**: (Optional) 요청 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
 - **maxBodyLength**: (Optional) 응답 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
+    - `Content-Length` 헤더가 존재하면 이를 기준으로 미리 검사하고, 없으면 수신된 바이트 수를 기준으로 검사합니다.
 - **auth**: (Optional) 인증 정보 객체.
     - Basic Auth: `{ username: 'user', password: 'pw' }`
     - Bearer Token: `{ bearer: 'token_string' }` (헤더에 `Authorization: Bearer ...` 자동 추가)
@@ -77,10 +79,12 @@
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number, ms 단위, 기본값: 0).
 - **socketPath**: (Optional) Unix Domain Socket 경로 (String). (설정 시 `url`의 호스트 부분은 무시됨. 예: `/var/run/docker.sock`)
 - **localAddress**: (Optional) 요청을 보낼 로컬 네트워크 인터페이스의 IP 주소 (String). (IP Rotation, Multi-homed 서버 등에서 사용)
-- **proxy**: (Optional) 프록시 서버 주소 (String). (예: `http://user:pass@proxy.com:8080`)
+- **proxy**: (Optional) 프록시 서버 설정 (String | Object).
+    - **String**: `http://user:pass@proxy.com:8080`
+    - **Object**: `{ host: string, port: number, protocol?: string, auth?: { username: string, password: string } }`
     - 주의: 브라우저 환경에서는 보안 정책상 무시될 수 있습니다.
 - **agent**: (Optional) HTTP 연결 풀링(Connection Pooling)을 위한 플랫폼별 에이전트 객체.
-    - Node.js: `http.Agent` / `https.Agent`
+    - Node.js: `http.Agent` / `https.Agent` 또는 `{ http: Agent, https: Agent }` (프로토콜별 분리)
     - Java: `OkHttpClient` 인스턴스
     - Python: `Session` 객체 등
     - 주의: 이 옵션이 설정되면 `proxy`, `ssl`, `keepAlive` 등 연결 관련 옵션은 무시될 수 있습니다. (에이전트 설정 우선)
@@ -122,12 +126,14 @@
 - **lookup**: (Optional) 커스텀 DNS 조회 함수/인터페이스. (언어별 DNS 해석 로직 주입)
 - **referrer**: (Optional) 요청 헤더의 Referer 값 (String).
 - **referrerPolicy**: (Optional) Referrer 정책 (String). (예: `'no-referrer'`, `'origin'`, `'unsafe-url'` 등)
+- **priority**: (Optional) 요청의 우선순위 (String, 기본값: `'auto'`). (Fetch API 표준 준수)
+    - `'high'`, `'low'`, `'auto'`
 - **integrity**: (Optional) 리소스 무결성 검증을 위한 해시값 (String). (예: `sha384-...`) (Fetch API 표준 준수)
 - **signal**: (Optional) 요청 취소를 위한 시그널 객체. (JS: `AbortSignal`, Python/Java: Cancellation Token/Context 등 언어별 표준 취소 메커니즘 매핑)
 - **onUploadProgress**: (Optional) 업로드 진행률 콜백 함수. `(progressEvent) => void`
     - `progressEvent`: `{ loaded: number, total?: number }` (브라우저 환경의 경우 XHR을 사용하거나, Fetch 스트림 지원이 필요할 수 있음)
 - **onDownloadProgress**: (Optional) 다운로드 진행률 콜백 함수. `(progressEvent) => void`
-    - `progressEvent`: `{ loaded: number, total?: number }`
+    - `progressEvent`: `{ loaded: number, total?: number }` (브라우저 환경의 경우 XHR을 사용하거나, Fetch 스트림 지원이 필요할 수 있음)
 - **meta**: (Optional) 사용자 정의 메타데이터 (Object/Dict).
     - 서버로 전송되지 않으며, 응답 객체나 에러 객체에 그대로 전달되어 로깅이나 후처리에 사용됩니다.
 - **hooks**: (Optional) 요청 라이프사이클 훅 (Object).
@@ -145,7 +151,15 @@
 - **status**: HTTP 상태 코드 (Number)
 - **statusText**: HTTP 상태 메시지 (String). (예: "OK", "Not Found")
 - **duration**: 요청 시작부터 응답 완료까지 걸린 시간 (Number, ms 단위).
+- **timings**: (Optional) 구간별 소요 시간 정보 (Object, ms 단위). (지원하는 플랫폼에 한함)
+    - `dns`: DNS 조회 시간.
+    - `connect`: TCP 연결 시간 (SSL 핸드셰이크 포함).
+    - `send`: 요청 전송 시간.
+    - `wait`: 서버 응답 대기 시간 (TTFB).
+    - `receive`: 데이터 수신 시간.
 - **url**: 최종 응답 URL (String). (리다이렉트가 발생한 경우 리다이렉트 된 최종 주소)
+- **history**: (Optional) 리다이렉트 기록 배열 (Array<Object>).
+    - 리다이렉트가 발생했을 때, 이전 요청들에 대한 간략한 정보(`url`, `status`, `statusText`)를 포함합니다.
 - **config**: 요청 시 사용된 설정 객체 (Object). (`meta` 포함)
 - **body**: 실제 응답 데이터.
     - `responseType` 설정이 최우선으로 적용됩니다.
@@ -211,6 +225,7 @@
 
 - **Multipart Body (`data` + `files`)**:
     - `files`가 존재하여 `multipart/form-data`로 전송되는 경우, `data` 필드의 처리 규칙:
+        - **제약 사항**: `data`는 반드시 **Plain Object**여야 합니다. (`FormData`, `URLSearchParams`, `Stream` 등 네이티브 객체와 혼용 불가)
         - `null`, `undefined`: **제외(Omit)**합니다.
         - **배열(Array)**: 동일한 Key로 여러 필드를 전송합니다. (예: `tags: ['a', 'b']` -> `tags=a`, `tags=b`)
         - **Date 객체**: **ISO 8601** 문자열로 변환하여 전송합니다.
