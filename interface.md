@@ -35,6 +35,11 @@
 - **Traceability**: 요청의 전체 수명 주기(Life-cycle) 동안 식별자(`requestId`)와 메타데이터(`meta`)는 보존되어야 하며, 로그나 에러 객체를 통해 추적 가능해야 합니다.
 - **Deterministic Execution**: 비동기 로직(Hooks, Retry, Redirect 등)의 실행 순서는 네트워크 상태나 시스템 부하에 관계없이 항상 결정론적(Deterministic)이어야 합니다. (Race Condition 방지)
 
+- **개발자 경험 우선 (Developer Experience First)**: API는 직관적이어야 하며, 에러 메시지는 명확하고 디버깅에 유용해야 합니다. 잘 정리된 문서는 라이브러리의 핵심적인 부분으로 간주됩니다.
+- **명확한 버전 관리 (Clear Versioning Policy)**: 모든 릴리즈는 유의적 버전(Semantic Versioning) 2.0.0 규칙을 엄격히 준수합니다. 이를 통해 사용자는 버전 업그레이드에 따른 호환성 변경을 명확히 예측할 수 있습니다. 주요 변경(Breaking Change)은 반드시 메이저 버전 업데이트를 통해 이루어지며, 상세한 마이그레이션 가이드를 함께 제공합니다.
+- **성능을 고려한 설계 (Performance as a Feature)**: 라이브러리는 최소한의 오버헤드와 효율적인 리소스 사용을 목표로 합니다. 불필요한 메모리 할당이나 연산을 지양하고, 대용량 데이터 처리 시에도 안정적인 성능을 제공해야 합니다.
+- **확장성과 테스트 용이성 (Extensibility & Testability)**: 라이브러리의 핵심 기능은 `hooks`나 `adapter`와 같은 명확한 인터페이스를 통해 확장 가능해야 합니다. 또한, 모든 동작은 예측 가능해야 하며, 사용자가 자신의 코드를 쉽게 테스트할 수 있도록 Mocking과 같은 테스트 전략을 지원하는 구조를 지향합니다.
+
 ## 1. 필수로 포함되어야 할 파라미터 (The Input)
 
 어떤 언어의 `jady.call()`이든 다음 인자들은 동일한 이름으로 존재해야 합니다.
@@ -68,12 +73,12 @@
     - `'none'`: 쿠키를 자동으로 처리하지 않습니다. `headers.Cookie`를 통해 수동으로만 설정할 수 있습니다.
     - `'browser'`: 브라우저의 내장 쿠키 메커니즘을 사용합니다. `withCredentials` 옵션의 영향을 받습니다. (브라우저 환경 전용)
     - `'manual'`: `platform.cookies` 옵션에 명시된 객체를 직렬화하여 `Cookie` 헤더를 생성합니다. (서버 환경 전용)
-- **data**: (Optional) Request Body (Object/Dict, String, Byte Array, Stream).
+- **data**: (Optional) Request Body (Object/Dict, String, Byte Array, Stream, Native Object).
     - **GET, HEAD 메서드**: `data` 및 `files` 값이 존재하더라도 **무시(Ignored)**하고 전송하지 않습니다. (DELETE 등 그 외 메서드는 본문 전송 허용)
     - **Object/Dict**: 기본적으로 **JSON 직렬화** (`Content-Type: application/json` 자동 추가).
         - 예외: 헤더에 `application/x-www-form-urlencoded`가 명시된 경우, **Query String** 형태로 변환하여 전송합니다.
     - **String**: 그대로 전송 (`Content-Type` 미지정 시 `text/plain; charset=utf-8` 자동 추가).
-    - **Byte Array/Buffer**: 그대로 전송 (`Content-Type` 미지정 시 `application/octet-stream` 자동 추가).
+    - **Byte Array / Buffer**: 그대로 전송 (`Content-Type` 미지정 시 `application/octet-stream` 자동 추가).
     - **Stream**: (Readable Stream, File-like Object) 메모리에 적재하지 않고 스트리밍 전송 (`Content-Type` 미지정 시 `application/octet-stream` 자동 추가).
     - **Form Data (`application/x-www-form-urlencoded`)**: `data`가 객체이고 헤더가 설정된 경우, `params`의 직렬화 규칙(`paramsArrayFormat`, `paramsSerializer`)을 따릅니다.
     - **Native Objects**: `FormData`, `URLSearchParams` (JS) 등 언어별 네이티브 객체가 전달되면, 별도 변환 없이 그대로 전송하며 적절한 `Content-Type`을 자동으로 설정합니다.
@@ -81,29 +86,32 @@
         - 이 경우, 사용자가 `headers`에 명시한 `Content-Type`은 **무시**됩니다. (네이티브 객체의 타입이 우선함)
 - **files**: (Optional) 파일 업로드 객체 (Multipart/form-data).
     - Key: Field Name, Value: File Object / Blob / Stream / Path(Server-side only) **또는 그 배열(Array)**.
+        - 배열 내부에 `null` 또는 `undefined` 값이 포함될 경우, 해당 값은 **무시**됩니다.
     - **고급 설정**: Value를 `{ file: ..., filename?: string, contentType?: string }` 객체로 전달하여 파일명과 타입을 명시할 수 있습니다. (배열 내부 요소로도 사용 가능)
         - **Tip**: JSON 메타데이터 등 파일이 아닌 파트도 `Content-Type` 지정이 필요하다면 이 방식을 통해 `files`에 포함시킬 수 있습니다.
         - **Default Filename**: Stream이나 Buffer 등 파일명이 없는 객체가 전달되고 `filename` 옵션도 없는 경우, 라이브러리는 `'blob'` 또는 `'file'` 등 **임의의 기본 파일명**을 생성하여 `Content-Disposition` 헤더에 포함해야 합니다. (서버 거부 방지)
         - **Default Content-Type**: 명시되지 않은 경우 파일 확장자 등을 통해 추론하며, 추론 불가능 시 `application/octet-stream`을 사용합니다.
     - **Browser Environment**: 브라우저에서는 보안상 파일 경로(String)를 사용할 수 없으며, `File` 또는 `Blob` 객체를 직접 전달해야 합니다.
+    - **FILES and DATA**: `files`와 `data`에 동일한 키가 존재할 경우 Multi-value로 전송된다는 경고는 적절하지만, 이 동작을 제어할 수 있는 옵션(예: 덮어쓰기)을 제공하는 것을 고려해볼 수 있습니다.
     - **Note**: 빈 `files` 객체(`{}`)는 내용이 없는 `multipart/form-data` 요청을 생성하며, 이는 일부 서버에서 올바르게 처리되지 않을 수 있습니다.
     - **Resource Management (Server)**: 전달된 Stream이나 파일 핸들은 요청 완료 후에도 라이브러리가 **자동으로 닫지 않습니다(No Auto-close)**. 리소스 관리는 호출자의 책임입니다.
-    - 이 값이 존재하면 `Content-Type` 헤더는 **사용자 설정 값을 무시하고** 자동으로 `multipart/form-data; boundary=...`로 설정됩니다.
+    - 이 값이 존재하면 `Content-Type` 헤더는 **사용자 설정 값을 무시**하고 자동으로 `multipart/form-data; boundary=...`로 설정됩니다.
 - **headers**: (Optional) HTTP 헤더 (Object/Dict).
     - **보안**: Header Value에 줄바꿈 문자(`\n`, `\r`)가 포함된 경우, **예외(Exception)**를 발생시켜야 합니다. (HTTP Response Splitting 방지)
     - **Key Validation**: Header Key에 공백이나 제어 문자 등 HTTP 토큰으로 유효하지 않은 문자가 포함된 경우, **예외**를 발생시켜야 합니다.
     - **처리 규칙**: 라이브러리 내부에서 헤더를 병합하거나 덮어쓸 때, 키(Key)의 **대소문자를 구분하지 않고(Case-insensitive)** 처리해야 합니다. (예: 사용자가 `content-type`을 보내면, 라이브러리가 `Content-Type`을 중복해서 추가하지 않아야 함)
     - **Browser Limitation**: 브라우저 환경에서는 보안 정책상 `Host`, `User-Agent`, `Content-Length` 등 특정 헤더(Forbidden Header Name) 설정이 무시될 수 있습니다.
+
     - **Encoding**: 헤더 값은 **ASCII/ISO-8859-1** 범위 내의 문자여야 합니다. 비-ASCII 문자(예: UTF-8 한글)가 포함된 경우 플랫폼에 따라 인코딩 깨짐이나 예외가 발생할 수 있으므로, 사용자가 직접 인코딩(예: RFC 5987)해서 전달해야 합니다.
     - **Precedence**: 사용자가 명시적으로 설정한 헤더는 라이브러리가 자동으로 생성하는 기본 헤더보다 항상 우선합니다. 특히, 헤더 값을 `null`로 설정하면 해당 헤더는 전송되지 않습니다.
-- **timeout**: (Optional) 응답 수신 대기 시간 (Number, ms 단위, 기본값: 30000). **(시간 초과 시 `'ETIMEDOUT'` 예외 발생, 0 설정 시 무제한)**
+- **timeout**: (Optional) 응답 수신 대기 시간 (Number, ms 단위, 기본값: 30000). (시간 초과 시 `'ETIMEDOUT'` 예외 발생, 0 설정 시 무제한)
     - **의미**: 소켓 연결 후, 서버로부터 첫 바이트(TTFB)를 포함한 응답 데이터가 수신되기 시작하는 것을 기다리는 시간 (Idle Timeout)입니다. 이는 모든 플랫폼에서 가장 일관되게 구현 가능한 시간 제한입니다.
     - **Redirect**: 리다이렉트 발생 시, 새로운 요청에 대해 타이머가 초기화됩니다.
 - **totalTimeout**: (Optional) 요청의 전체 수명 주기 제한 시간 (Number, ms 단위, 기본값: 0).
     - **의미**: DNS 조회, 연결, 요청 전송, 재시도, 리다이렉트를 포함한 모든 과정이 이 시간 내에 완료되어야 함을 의미합니다. 라이브러리는 이 시간 제한을 반드시 준수해야 합니다.
     - `0`은 무제한을 의미합니다.
 - **saveRawBody**: (Optional) `true` 설정 시, 파싱된 `body` 외에 원본 텍스트/버퍼를 `rawBody` 필드로 응답 객체에 포함합니다. (HMAC 검증 등에 사용)
-    - `responseType`이 `'stream'`인 경우, 이 옵션은 **무시(Ignored)**됩니다. (스트림은 버퍼링되지 않음)
+    - `responseType`이 `'stream'`인 경우, 이 옵션은 **무시**됩니다. (스트림은 버퍼링되지 않음)
 - **requestId**: (Optional) 요청 식별자 (String). (설정하지 않으면 UUID 등을 자동 생성하여 할당 권장)
 - **auth**: (Optional) 인증 정보 객체.
     - Basic Auth: `{ username: 'user', password: 'pw' }` (RFC 7617에 따라 **UTF-8**로 인코딩합니다.)
@@ -115,7 +123,7 @@
     - `'follow'`: 3xx 응답을 자동으로 따라갑니다. (최대 10회)
     - **Method Change**: `301`, `302`, `303` 응답 시, 리다이렉트 요청의 메서드는 **`GET`**으로 변경되며 요청 Body는 제거됩니다. (`307`, `308`은 메서드와 Body 유지)
     - `'error'`: 3xx 응답을 네트워크 오류로 처리합니다.
-    - `'manual'`: 3xx 응답을 그대로 반환합니다. (상태 코드 확인 필요)
+    - `'manual'`: 3xx 응답을 그대로 반환합니다. (상태 코드 확인 필요, `Location` 헤더 확인)
         - **Note**: 이 경우 3xx 상태 코드가 반환되므로, `validateStatus` 설정에 따라 에러로 처리될 수 있습니다. 필요시 `validateStatus`를 조정하십시오.
     - **보안 (서버 환경 요구사항)**: 서버 환경 구현체는 Cross-Domain 리다이렉트 시 `Authorization`, `Cookie`, `Proxy-Authorization` 헤더를 자동으로 **제거(Strip)**해야 합니다. 브라우저에서는 이 동작을 제어할 수 없습니다.
 - **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용. 브라우저 환경에서는 보안 정책에 따라 무시되거나 제한될 수 있음)
@@ -136,7 +144,7 @@
     - `'auto'`: 아래의 **결정론적 규칙**에 따라 JSON, Text, Binary 자동 처리.
         - 1. `Content-Type` 헤더가 `application/json`이거나 `+json` 접미사(예: `application/problem+json`)를 포함하면 **JSON**으로 처리합니다.
         - 2. 위 조건에 해당하지 않고, `Content-Type`이 `text/`로 시작하거나 `application/xml`, `application/javascript` 등 명백한 텍스트 타입이면 **Text**로 처리합니다.
-        - 3. 그 외의 모든 경우는 **Binary**로 처리.
+        - 3. 그 외의 모든 경우는 **Binary**로 처리합니다.
     - `'json'`: 강제로 JSON 파싱 시도. (파싱 실패 시 `'EPARSE'` 예외 발생)
     - `'text'`: 강제로 텍스트로 반환.
     - `'bytes'`: Binary Data (Buffer/Bytes)로 반환.
@@ -218,6 +226,8 @@
     - **`blockPrivateIP`**: 사설 IP 대역 요청 차단 여부 (Boolean).
     - **`socketPath`**: Unix Domain Socket 경로 (String).
     - **`localAddress`**: 로컬 네트워크 인터페이스 IP 주소 (String).
+    - `noProxy`: 프록시를 사용하지 않을 도메인 목록 (String[], 쉼표로 구분).
+        - 예: `['localhost', '127.0.0.1', '.example.com']`
     - **`family`**: DNS 조회 시 사용할 IP 버전 (Number: `4`, `6`, `0`).
     - **`lookup`**: 커스텀 DNS 조회 함수/인터페이스.
     - **`preserveHeaderCase`**: 헤더 키 대소문자 유지 여부 (Boolean).
