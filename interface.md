@@ -37,7 +37,7 @@
     - `'index'`: `key[0]=v1&key[1]=v2`
 - **paramsSerializer**: (Optional) Query Parameter를 문자열로 변환하는 커스텀 함수. `(params) => string`
     - 이 값이 설정되면 `paramsArrayFormat`은 무시됩니다.
-    - 반환값은 맨 앞의 `?`를 포함하지 않아야 합니다.
+    - 반환값은 맨 앞의 `?`를 포함하지 않아야 합니다. (만약 포함된 경우, 라이브러리가 자동으로 제거합니다.)
     - 빈 문자열을 반환하는 경우, URL 끝에 `?`를 붙이지 않아야 합니다.
 - **cookieMode**: (Optional) 쿠키 처리 방식을 정의하는 모드 (String, 기본값: `'none'`).
     - `'none'`: 쿠키를 자동으로 처리하지 않습니다. `headers.Cookie`를 통해 수동으로만 설정할 수 있습니다.
@@ -60,6 +60,7 @@
         - **Tip**: JSON 메타데이터 등 파일이 아닌 파트도 `Content-Type` 지정이 필요하다면 이 방식을 통해 `files`에 포함시킬 수 있습니다.
         - **Default Filename**: Stream이나 Buffer 등 파일명이 없는 객체가 전달되고 `filename` 옵션도 없는 경우, 라이브러리는 `'blob'` 또는 `'file'` 등 **임의의 기본 파일명**을 생성하여 `Content-Disposition` 헤더에 포함해야 합니다. (서버 거부 방지)
     - **Browser Environment**: 브라우저에서는 보안상 파일 경로(String)를 사용할 수 없으며, `File` 또는 `Blob` 객체를 직접 전달해야 합니다.
+    - **Resource Management (Server)**: 전달된 Stream이나 파일 핸들은 요청 완료 후에도 라이브러리가 **자동으로 닫지 않습니다(No Auto-close)**. 리소스 관리는 호출자의 책임입니다.
     - 이 값이 존재하면 `Content-Type` 헤더는 **사용자 설정 값을 무시하고** 자동으로 `multipart/form-data; boundary=...`로 설정됩니다.
 - **headers**: (Optional) HTTP 헤더 (Object/Dict).
     - **보안**: Header Value에 줄바꿈 문자(`\n`, `\r`)가 포함된 경우, **예외(Exception)**를 발생시켜야 합니다. (HTTP Response Splitting 방지)
@@ -86,6 +87,7 @@
     - **Method Change**: `301`, `302`, `303` 응답 시, 리다이렉트 요청의 메서드는 **`GET`**으로 변경되며 요청 Body는 제거됩니다. (`307`, `308`은 메서드와 Body 유지)
     - `'error'`: 3xx 응답을 네트워크 오류로 처리합니다.
     - `'manual'`: 3xx 응답을 그대로 반환합니다. (상태 코드 확인 필요)
+        - **Note**: 이 경우 3xx 상태 코드가 반환되므로, `validateStatus` 설정에 따라 에러로 처리될 수 있습니다. 필요시 `validateStatus`를 조정하십시오.
     - **보안 (서버 환경 요구사항)**: 서버 환경 구현체는 Cross-Domain 리다이렉트 시 `Authorization`, `Cookie`, `Proxy-Authorization` 헤더를 자동으로 **제거(Strip)**해야 합니다. 브라우저에서는 이 동작을 제어할 수 없습니다.
 - **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용. 브라우저 환경에서는 보안 정책에 따라 무시되거나 제한될 수 있음)
 - **retry**: (Optional) 실패 시 재시도 횟수 (Number, 기본값: 0).
@@ -96,7 +98,7 @@
     - 이 함수가 설정되면, **기본 재시도 조건(네트워크 오류, 5xx, 429)은 무시되고** 이 함수의 반환값에 따라서만 재시도가 결정됩니다. 이를 통해 `401` 응답 후 토큰 갱신 재시도 등 완전히 커스텀된 로직을 구현할 수 있습니다.
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number | Function, ms 단위, 기본값: 0).
     - **Number**: 고정 대기 시간.
-    - **Function**: `(retryCount, error) => number` (지수 백오프 등 동적 계산 가능).
+    - **Function**: `(retryCount, error) => number` (지수 백오프 등 동적 계산 가능. `retryCount`는 1부터 시작하는 정수입니다.)
 - **adapter**: (Optional) 실제 네트워크 요청을 수행하는 커스텀 어댑터 함수. `(config) => Promise<Response>`
     - Mocking, 테스팅, 혹은 특수한 프로토콜 처리를 위해 내부 로직을 대체할 때 사용합니다.
 - **responseType**: (Optional) 응답 데이터의 타입 지정 (String, 기본값: `'auto'`).
@@ -134,13 +136,16 @@
     - `'high'`, `'low'`, `'auto'`
 - **integrity**: (Optional) 리소스 무결성 검증을 위한 해시값 (String). (예: `sha384-...`) (Fetch API 표준 준수)
 - **signal**: (Optional) 요청 취소를 위한 시그널 객체. (JS: `AbortSignal`, Python/Java: Cancellation Token/Context 등 언어별 표준 취소 메커니즘 매핑)
-    - 요청 시작 시점에 이미 시그널이 취소(Aborted) 상태라면, 요청을 보내지 않고 즉시 **`'ECANCELED'` 예외**를 발생시켜야 합니다.
+    - 요청 시작 시점 혹은 **재시도 대기(Retry Delay) 중**에 시그널이 취소되면, 즉시 대기를 중단하고 **`'ECANCELED'` 예외**를 발생시켜야 합니다.
 - **onUploadProgress**: (Optional) 업로드 진행률 콜백 함수. `(progressEvent) => void`
     - `progressEvent`: `{ loaded: number, total?: number }` (브라우저 환경의 경우 XHR을 사용하거나, Fetch 스트림 지원이 필요할 수 있음)
     - **Node.js**: Stream 입력의 경우, 전체 크기(`Content-Length`)를 알 수 없으면 `total` 속성이 생략될 수 있습니다.
+    - **Async Handling**: 이 콜백은 비동기로 호출될 수 있지만, 라이브러리는 콜백의 완료를 기다리지 않습니다(Fire-and-forget).
 - **onDownloadProgress**: (Optional) 다운로드 진행률 콜백 함수. `(progressEvent) => void`
     - `progressEvent`: `{ loaded: number, total?: number }` (브라우저 환경의 경우 XHR을 사용하거나, Fetch 스트림 지원이 필요할 수 있음)
     - **Chunked Encoding**: 서버가 `Content-Length`를 보내지 않는 경우(Chunked), `total` 속성은 생략되거나 `0`일 수 있습니다.
+    - **Stream Response**: `responseType: 'stream'`일 때도 플랫폼이 지원하는 경우 데이터 수신에 따라 이 콜백이 호출되어야 합니다.
+    - **Async Handling**: 이 콜백은 비동기로 호출될 수 있지만, 라이브러리는 콜백의 완료를 기다리지 않습니다(Fire-and-forget).
 - **meta**: (Optional) 사용자 정의 메타데이터 (Object/Dict).
     - 서버로 전송되지 않으며, 응답 객체나 에러 객체에 그대로 전달되어 로깅이나 후처리에 사용됩니다.
 - **hooks**: (Optional) 요청 라이프사이클 훅 (Object).
@@ -155,12 +160,13 @@
 - **platform**: (Optional) 플랫폼별 특화 기능 및 저수준 제어 옵션 객체. 이 객체에 포함된 옵션들은 모든 플랫폼에서 동일한 동작을 보장하지 않습니다.
     - **`cookies`**: `cookieMode: 'manual'`일 때, 요청과 함께 전송할 쿠키 객체 (Object/Dict).
         - **Serialization**: 객체는 `key=value` 쌍을 `; `로 이어 붙인 단일 문자열로 직렬화되어야 합니다.
+        - **Note**: 값은 별도의 인코딩 없이 그대로 사용됩니다. (필요 시 사용자가 미리 인코딩해야 함)
     - **`timeout`**: 세부 타임아웃 설정 객체.
         - `connect`: 소켓 연결 대기 시간 (Number, ms).
         - `write`: 데이터 전송(Upload) 대기 시간 (Number, ms).
     - **`proxy`**: 프록시 서버 설정 (String | Object | `false`).
         - **String**: `http://user:pass@proxy.com:8080`
-        - **Object**: `{ host, port, protocol, auth: { username, password }, headers, noProxy }`
+        - **Object**: `{ host: string, port: number, protocol?: string, auth?: { username, password }, headers?: Object, noProxy?: string[] }`
             - `auth` 필드가 `host` 문자열의 인증 정보보다 우선합니다.
         - `false` 설정 시 시스템 프록시를 무시하고 직접 연결합니다.
     - **`ssl`**: SSL/TLS 설정 객체. (`ca`, `cert`, `key` 등)
@@ -168,9 +174,9 @@
     - **`http2`**: HTTP/2 사용 여부 (Boolean).
         - `true` 설정 시 ALPN을 통해 연결을 시도하며, 미지원 시 **HTTP/1.1로 폴백**하는 것을 권장합니다.
     - **`keepAlive`**: HTTP Keep-Alive 활성화 여부 (Boolean).
-    - **`maxHeaderSize`**: 응답 헤더의 최대 크기 제한 (Number, bytes).
-    - **`maxContentLength`**: 요청 본문의 최대 크기 제한 (Number, bytes).
-    - **`maxBodyLength`**: 응답 본문의 최대 크기 제한 (Number, bytes).
+    - **`maxHeaderSize`**: 응답 헤더의 최대 크기 제한 (Number, bytes). (`0` 설정 시 무제한)
+    - **`maxContentLength`**: 요청 본문의 최대 크기 제한 (Number, bytes). (`0` 설정 시 무제한)
+    - **`maxBodyLength`**: 응답 본문의 최대 크기 제한 (Number, bytes). (`0` 설정 시 무제한)
     - **`blockPrivateIP`**: 사설 IP 대역 요청 차단 여부 (Boolean).
     - **`socketPath`**: Unix Domain Socket 경로 (String).
     - **`localAddress`**: 로컬 네트워크 인터페이스 IP 주소 (String).
