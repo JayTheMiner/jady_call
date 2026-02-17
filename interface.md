@@ -93,7 +93,7 @@
     - **Retry-After**: 429 또는 503 응답에 `Retry-After` 헤더가 포함된 경우, `retryDelay` 설정보다 우선하여 해당 시간만큼 대기 후 재시도해야 합니다. (초 단위, HTTP-Date 형식 모두 지원해야 함)
     - **Timeout 충돌**: `Retry-After` 대기 시간이 남은 `totalTimeout`을 초과할 경우, 재시도하지 않고 즉시 **`'ETIMEDOUT'`** 예외를 발생시켜야 합니다.
 - **retryCondition**: (Optional) 재시도 여부를 결정하는 커스텀 함수. `(error, retryCount) => boolean | Promise<boolean>`
-    - 이 함수는 기본 재시도 조건(네트워크 오류, 5xx 등)에 **추가**로 적용됩니다. `false`를 반환하면 기본 조건에 해당하더라도 재시도를 중단합니다.
+    - 이 함수가 설정되면, **기본 재시도 조건(네트워크 오류, 5xx, 429)은 무시되고** 이 함수의 반환값에 따라서만 재시도가 결정됩니다. 이를 통해 `401` 응답 후 토큰 갱신 재시도 등 완전히 커스텀된 로직을 구현할 수 있습니다.
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number | Function, ms 단위, 기본값: 0).
     - **Number**: 고정 대기 시간.
     - **Function**: `(retryCount, error) => number` (지수 백오프 등 동적 계산 가능).
@@ -145,8 +145,8 @@
     - 서버로 전송되지 않으며, 응답 객체나 에러 객체에 그대로 전달되어 로깅이나 후처리에 사용됩니다.
 - **hooks**: (Optional) 요청 라이프사이클 훅 (Object).
     - `beforeRequest`: `(config) => config | Promise<config>` (요청 전송 전 실행)
-    - `afterResponse`: `(response) => response | Promise<response>` (응답 수신 후 실행)
-    - `beforeError`: `(error) => error | Promise<error>` (에러 발생 시 실행)
+    - `afterResponse`: `(response) => response | Promise<response>` (최종적으로 반환될 응답 객체를 대상으로 실행됩니다. 재시도되는 중간 응답에는 실행되지 않습니다.)
+    - `beforeError`: `(error) => error | Promise<error>` (최종적으로 던져질(throw) 에러 객체를 대상으로 실행됩니다. 재시도되는 중간 에러에는 실행되지 않습니다.)
     - `beforeRetry`: `(error, retryCount) => void | boolean | Config | Promise<...>` (재시도 직전 실행)
         - `false` 반환: 재시도 중단.
         - `Config` 객체 반환: 해당 설정으로 다음 재시도를 수행합니다. (프록시 교체 등)
@@ -154,6 +154,7 @@
     - `beforeRedirect`: `(options, response) => void | Promise<void>` (리다이렉트 직전 실행. 헤더 수정 등에 사용)
 - **platform**: (Optional) 플랫폼별 특화 기능 및 저수준 제어 옵션 객체. 이 객체에 포함된 옵션들은 모든 플랫폼에서 동일한 동작을 보장하지 않습니다.
     - **`cookies`**: `cookieMode: 'manual'`일 때, 요청과 함께 전송할 쿠키 객체 (Object/Dict).
+        - **Serialization**: 객체는 `key=value` 쌍을 `; `로 이어 붙인 단일 문자열로 직렬화되어야 합니다.
     - **`timeout`**: 세부 타임아웃 설정 객체.
         - `connect`: 소켓 연결 대기 시간 (Number, ms).
         - `write`: 데이터 전송(Upload) 대기 시간 (Number, ms).
@@ -197,7 +198,7 @@
     - `receive`: 데이터 수신 시간.
 - **url**: 최종 응답 URL (String). (리다이렉트가 발생한 경우 리다이렉트 된 최종 주소)
 - **attempts**: (Array<Object>) 리다이렉트와 재시도를 포함한 모든 시도 기록.
-    - 각 요소는 `url`, `status`, `duration` 등을 포함하는 간략한 응답/에러 객체입니다.
+    - 각 요소는 해당 시점의 응답 또는 에러 정보를 담은 스냅샷 객체입니다. 최소한 다음 필드를 포함해야 합니다: `{ url: string, duration: number, status?: number, statusText?: string, headers?: object, error?: { code: string, message: string } }`
 - **request**: (Optional) 네이티브 요청 객체 (Object). (Node.js `ClientRequest`, Browser `XMLHttpRequest` 등)
 - **config**: 요청 시 사용된 설정 객체 (Object). (`meta` 포함)
 - **body**: 실제 응답 데이터.
