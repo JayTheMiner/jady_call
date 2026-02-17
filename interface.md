@@ -38,7 +38,7 @@
 - **cookies**: (Optional) 요청과 함께 전송할 쿠키 객체 (Object/Dict).
     - `headers`의 `Cookie` 값과 병합됩니다.
 - **data**: (Optional) Request Body (Object/Dict, String, Byte Array, Stream).
-    - **GET, HEAD 메서드**: `data` 및 `files` 값이 존재하더라도 **무시(Ignored)**하고 전송하지 않습니다. (JS Fetch API 등과의 호환성 유지)
+    - **GET, HEAD 메서드**: `data` 및 `files` 값이 존재하더라도 **무시(Ignored)**하고 전송하지 않습니다. (DELETE 등 그 외 메서드는 본문 전송 허용)
     - **Object/Dict**: 기본적으로 **JSON 직렬화** (`Content-Type: application/json` 자동 추가).
         - 예외: 헤더에 `application/x-www-form-urlencoded`가 명시된 경우, **Query String** 형태로 변환하여 전송합니다.
     - **String**: 그대로 전송 (`Content-Type` 미지정 시 `text/plain; charset=utf-8` 자동 추가).
@@ -58,6 +58,7 @@
         - `connect`: 소켓 연결 대기 시간.
         - `read`: 데이터 수신 대기 시간 (Socket Idle Timeout).
         - `total`: 전체 요청 제한 시간 (재시도 포함). **(이 값이 설정되면 `timeout`은 각 시도별 제한 시간으로 동작)**
+    - `total`이 설정되지 않은 경우, `timeout`은 **각 시도(Attempt)별** 제한 시간으로 동작합니다.
 - **maxHeaderSize**: (Optional) 응답 헤더의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 플랫폼별 기본값 또는 16KB)
 - **maxContentLength**: (Optional) 요청 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
 - **maxBodyLength**: (Optional) 응답 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
@@ -83,7 +84,7 @@
     - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
 - **retryMethods**: (Optional) 재시도를 허용할 HTTP 메서드 배열 (String[], 기본값: `['GET', 'PUT', 'HEAD', 'DELETE', 'OPTIONS', 'TRACE']`).
     - **POST, PATCH** 등 비멱등(Non-idempotent) 메서드는 기본적으로 재시도하지 않습니다. (중복 처리 방지)
-- **retryCondition**: (Optional) 재시도 여부를 결정하는 커스텀 함수. `(error) => boolean`
+- **retryCondition**: (Optional) 재시도 여부를 결정하는 커스텀 함수. `(error, retryCount) => boolean | Promise<boolean>`
     - 이 함수가 설정되면 `retryMethods` 및 기본 상태 코드 검사는 무시되고, 이 함수의 반환값에 따라 재시도합니다.
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number | Function, ms 단위, 기본값: 0).
     - **Number**: 고정 대기 시간.
@@ -192,10 +193,10 @@
     - **rawBody**: (Optional) `saveRawBody: true`일 때 포함되는 원본 데이터 (String | Buffer).
     - **HEAD 요청**: `body`는 항상 **`null`**입니다.
     - **자동 압축 해제(Decompression)**: `decompress: true`(기본값)일 경우, Gzip, Deflate, Brotli 등으로 압축된 응답은 자동으로 해제된 후 처리됩니다.
-    - JSON 응답 (`application/json`): **Object/Dict**로 자동 파싱. **(파싱 실패 시 Raw String 반환)**
+    - JSON 응답 (`application/json`): **Object/Dict**로 자동 파싱. **(파싱 실패 시 `'EPARSE'` 예외 발생)**
     - 텍스트 응답 (`text/*`): **String**. (인코딩은 `Content-Type` 헤더를 따르며, 명시되지 않은 경우 **UTF-8**을 기본으로 사용)
     - 상태 코드 204 (No Content): **null**.
-    - Stream 응답 (`responseType: 'stream'`): 언어별 **Readable Stream** 객체. (Promise는 **Headers 수신 직후** resolve 되며, 이후 데이터 수신 에러는 Stream 이벤트로 처리해야 합니다)
+    - Stream 응답 (`responseType: 'stream'`): 언어별 **Readable Stream** 객체. (사용자가 스트림을 **닫을(Close/Destroy) 책임**이 있습니다)
     - Blob 응답 (`responseType: 'blob'`): **Blob** 객체. (브라우저 환경 등 Blob API 지원 시)
     - 그 외 (이미지, 바이너리 등): **Byte Array / Buffer**.
 - **headers**: 응답 헤더 (Object). **모든 Key는 소문자(lowercase)로 정규화**됩니다.
