@@ -79,7 +79,9 @@
     - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
 - **retryMethods**: (Optional) 재시도를 허용할 HTTP 메서드 배열 (String[], 기본값: `['GET', 'PUT', 'HEAD', 'DELETE', 'OPTIONS', 'TRACE']`).
     - **POST, PATCH** 등 비멱등(Non-idempotent) 메서드는 기본적으로 재시도하지 않습니다. (중복 처리 방지)
-- **retryDelay**: (Optional) 재시도 간 대기 시간 (Number, ms 단위, 기본값: 0).
+- **retryDelay**: (Optional) 재시도 간 대기 시간 (Number | Function, ms 단위, 기본값: 0).
+    - **Number**: 고정 대기 시간.
+    - **Function**: `(retryCount, error) => number` (지수 백오프 등 동적 계산 가능).
 - **socketPath**: (Optional) Unix Domain Socket 경로 (String). (설정 시 `url`의 호스트 부분은 무시됨. 예: `/var/run/docker.sock`)
 - **localAddress**: (Optional) 요청을 보낼 로컬 네트워크 인터페이스의 IP 주소 (String). (IP Rotation, Multi-homed 서버 등에서 사용)
 - **proxy**: (Optional) 프록시 서버 설정 (String | Object).
