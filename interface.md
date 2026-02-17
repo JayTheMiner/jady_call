@@ -8,7 +8,23 @@
 - **Semantic Consistency**: **동일한 설정(Config)은 어떤 언어/플랫폼에서 실행되든 동일한 의미(Semantics)와 동일한 HTTP 요청 결과를 보장해야 합니다.**
     - 이를 위해, 플랫폼에 따라 동작이 달라지거나 구현이 불가능한 기능은 **`platform`** 객체 아래로 분리하여 명시적으로 사용하도록 합니다.
 - **Stateless**: `jady.call`은 상태를 가지지 않는 순수 함수(Pure Function) 혹은 정적 메서드(Static Method)처럼 동작해야 합니다.
-    - **No Cookie Jar**: 이전 요청의 `Set-Cookie`를 저장하거나 다음 요청에 자동으로 포함하지 않습니다. (브라우저의 기본 동작은 예외)
+    - **No Cookie Jar**: 라이브러리는 내부적으로 쿠키 저장소(Cookie Jar)를 유지하지 않습니다. 즉, 이전 요청의 `Set-Cookie`가 다음 요청에 자동으로 포함되지 않습니다.
+        - **Browser Exception**: 단, 브라우저 환경에서는 브라우저(User Agent)가 자체적으로 관리하는 쿠키 저장소가 동작하며, 이는 라이브러리가 제어할 수 없는 영역입니다.
+    - **Connection Pooling**: 단, 성능 최적화를 위해 내부적으로 TCP/TLS 연결 풀(Connection Pool)은 전역적으로 관리되거나 재사용될 수 있습니다. 이는 사용자 레벨의 세션 상태(Session State)와는 구별됩니다.
+- **Immutability**: 라이브러리는 사용자가 전달한 `config` 객체를 **변경하지 않아야 합니다(Immutable)**. 내부 처리를 위해 필요한 경우 복사본을 사용하여, 원본 객체의 재사용성을 보장해야 합니다.
+- **Thread Safety**: `jady.call` 함수는 **스레드 안전(Thread-safe)**해야 합니다. 멀티스레드 환경에서 동시에 호출되더라도 내부 상태 공유로 인한 부작용이 없어야 합니다.
+- **Fail Fast**: 잘못된 설정(Invalid Config)이나 호환되지 않는 옵션 조합이 감지되면, 요청을 보내기 전에 즉시 **예외(Exception)**를 발생시켜야 합니다. (Silent Failure 방지)
+- **Predictable Behavior**: 동일한 `config` 객체는 항상 동일한 HTTP 요청(메서드, URL, 헤더, 본문)을 생성해야 합니다. 응답 객체에 포함되는 `duration`이나 자동 생성된 `requestId` 등 동적인 값은 예외입니다. 이는 테스트 용이성과 예측 가능성을 보장합니다.
+- **Consistent Error Structure**: 라이브러리에서 발생하는 모든 예외는 **3. 에러 처리** 섹션에 정의된 표준 구조(코드, 메시지 등)를 따라야 합니다. 이를 통해 사용자는 언어에 상관없이 일관된 방식으로 에러를 처리할 수 있습니다.
+- **Minimal Dependency**: 라이브러리는 외부 의존성을 최소화하여 가볍고 이식성이 높아야 합니다. 플랫폼 내장 기능(Native API)을 최대한 활용하는 것을 권장합니다.
+- **Explicit Over Implicit**: 암시적인 "마법" 동작보다는 명시적인 설정을 우선합니다. 사용자가 설정하지 않은 값에 대해 라이브러리가 임의로 추측하여 동작을 변경하지 않아야 하며, 모든 기본값(Default)은 문서에 명시된 대로만 적용되어야 합니다.
+- **RFC Compliance**: 동작이 모호하거나 문서에 정의되지 않은 엣지 케이스의 경우, 최신 HTTP RFC 표준(RFC 723x, RFC 911x 등)을 따르는 것을 원칙으로 합니다.
+- **Secure by Default**: 편의성보다 보안을 우선합니다. 모든 보안 관련 설정(SSL 검증, 살균 등)의 기본값은 가장 안전한 상태여야 합니다.
+- **UTF-8 by Default**: 문자열 처리(URL, JSON, Body, Auth 등)의 기본 인코딩은 **UTF-8**입니다. 단, HTTP 헤더와 같이 표준 스펙이 특정 인코딩(ASCII/ISO-8859-1)을 강제하는 경우는 예외입니다.
+- **Caller Ownership**: 리소스(Stream, File Handle 등)의 수명 주기는 **호출자(Caller)**가 관리합니다.
+    - **Input**: 사용자가 전달한 스트림이나 파일 핸들은 라이브러리가 읽기만 할 뿐, 전송 후 자동으로 닫지 않습니다.
+    - **Output**: `responseType: 'stream'` 등으로 반환된 리소스는 사용자가 명시적으로 닫아야(Close) 합니다.
+- **Type Safety**: 정적 타입 언어(TypeScript, Java, Go 등) 구현체는 컴파일 타임에 오류를 잡을 수 있도록 정확한 타입 정의와 제네릭(Generics)을 제공해야 합니다.
 
 ## 1. 필수로 포함되어야 할 파라미터 (The Input)
 
@@ -21,13 +37,13 @@
     - `url`이 절대 경로(`http://...`)일 경우, `baseUrl`은 무시됩니다.
 - **url**: 대상 주소 (String). (Path Parameter가 포함된 경우 `{key}` 또는 `:key` 형식 사용 권장)
 - **path**: (Optional) URL Path Parameter 치환 객체 (Object/Dict).
-    - `url` 내의 `{key}` 또는 `:key` 패턴을 찾아 해당 값으로 치환합니다.
+    - `baseUrl`과 `url`이 결합된 최종 URL에서 `{key}` 또는 `:key` 패턴을 찾아 해당 값으로 치환합니다.
     - 값은 자동으로 **URL Encoding** 처리되어야 합니다. (경로 구분자 `/`를 포함한 모든 특수 문자가 인코딩되어야 합니다. 예: `id`가 `a/b`면 `a%2Fb`로 치환)
 - **method**: HTTP 메서드 (String). (기본값: `GET`. 입력은 대소문자를 구분하지 않으나, 전송 시 **대문자**로 정규화됩니다.)
 - **params**: (Optional) Query Parameter (Object/Dict). 표준 URL Encoding (`application/x-www-form-urlencoded`)으로 변환. (공백은 `+`로 인코딩)
     - **배열(Array/List)** 값은 키 반복(`key=v1&key=v2`) 형태로 직렬화합니다.
     - **중첩 객체(Nested Object)**는 지원하지 않으며, 전달 시 **예외(Exception)**를 발생시켜야 합니다.
-    - `url`에 이미 쿼리 스트링이 존재하는 경우, `&`로 연결하여 병합합니다. (URL 끝의 `?`, `&` 중복 처리 필요)
+    - `url`에 이미 쿼리 스트링이 존재하는 경우, `params`로 생성된 쿼리 스트링을 기존 쿼리 스트링 뒤에 **추가(Append)**합니다. (예: `url: '/?a=1'`, `params: {b:2}` -> `/?a=1&b=2`)
     - **Hash(#) 처리**: URL에 Hash(Fragment)가 포함된 경우, Query String은 반드시 **Hash(#) 앞**에 삽입되어야 합니다.
     - **String / Native**: 문자열이나 `URLSearchParams` 등 네이티브 객체가 전달되면, 별도 변환 없이 그대로 쿼리 스트링으로 사용합니다.
 - **paramsArrayFormat**: (Optional) 배열 파라미터 직렬화 방식 (String, 기본값: `'repeat'`).
@@ -106,7 +122,7 @@
     - **Number**: 고정 대기 시간.
     - **Function**: `(retryCount, error) => number` (지수 백오프 등 동적 계산 가능. `retryCount`는 1부터 시작하는 정수입니다.)
 - **adapter**: (Optional) 실제 네트워크 요청을 수행하는 커스텀 어댑터 함수. `(config) => Promise<Response>`
-    - Mocking, 테스팅, 혹은 특수한 프로토콜 처리를 위해 내부 로직을 대체할 때 사용합니다.
+    - Mocking, 테스팅, 혹은 특수한 프로토콜 처리를 위해 내부 로직을 대체할 때 사용합니다. 어댑터는 **단일 요청 시도**에 대한 책임만 가지며, 재시도나 리다이렉트 로직은 `jady.call`의 핵심 로직이 어댑터를 여러 번 호출하는 방식으로 처리합니다.
 - **responseType**: (Optional) 응답 데이터의 타입 지정 (String, 기본값: `'auto'`).
     - `'auto'`: 아래의 **결정론적 규칙**에 따라 JSON, Text, Binary 자동 처리.
         - 1. `Content-Type` 헤더가 `application/json`이거나 `+json` 접미사(예: `application/problem+json`)를 포함하면 **JSON**으로 처리합니다.
@@ -149,12 +165,14 @@
     - **Node.js**: Stream 입력의 경우, 전체 크기(`Content-Length`)를 알 수 없으면 `total` 속성이 생략될 수 있습니다.
     - **Multipart**: Stream이나 File이 포함된 `multipart/form-data` 전송 시, 전체 크기 계산이 어렵거나 비용이 많이 드는 경우 `total` 속성이 생략(`undefined`)될 수 있습니다.
     - **Async Handling**: 이 콜백은 비동기로 호출될 수 있지만, 라이브러리는 콜백의 완료를 기다리지 않습니다(Fire-and-forget).
+    - **Redirect**: 리다이렉트 발생 시, 진행률은 초기화되며 새로운 요청에 대해 0부터 다시 시작합니다.
 - **onDownloadProgress**: (Optional) 다운로드 진행률 콜백 함수. `(progressEvent) => void`
     - `progressEvent`: `{ loaded: number, total?: number }` (브라우저 환경의 경우 XHR을 사용하거나, Fetch 스트림 지원이 필요할 수 있음)
     - **Chunked Encoding**: 서버가 `Content-Length`를 보내지 않는 경우(Chunked), `total` 속성은 생략되거나 `0`일 수 있습니다.
     - **Stream Response**: `responseType: 'stream'`일 때도 플랫폼이 지원하는 경우 데이터 수신에 따라 이 콜백이 호출되어야 합니다.
     - **Async Handling**: 이 콜백은 비동기로 호출될 수 있지만, 라이브러리는 콜백의 완료를 기다리지 않습니다(Fire-and-forget).
     - **Wire Bytes**: `loaded`와 `total`은 **압축된(Compressed) 전송 데이터** 기준입니다. (자동 압축 해제된 `body`의 크기와 다를 수 있음)
+    - **Redirect**: 리다이렉트 발생 시, 진행률은 초기화되며 새로운 응답에 대해 0부터 다시 시작합니다.
 - **meta**: (Optional) 사용자 정의 메타데이터 (Object/Dict).
     - 서버로 전송되지 않으며, 응답 객체나 에러 객체에 그대로 전달되어 로깅이나 후처리에 사용됩니다.
 - **hooks**: (Optional) 요청 라이프사이클 훅 (Object).
@@ -165,7 +183,9 @@
         - `false` 반환: 재시도 중단.
         - `Config` 객체 반환: 이 새로운 `Config`는 다음 재시도 시도에 사용됩니다. (프록시 교체, 딜레이 변경 등)
         - **주의**: `Config`를 반환해도 `retryCount`는 계속 증가하며, 허용된 총 재시도 횟수는 **원래 `Config`**의 `retry` 설정에 의해 제어됩니다.
-    - `beforeRedirect`: `(options, response) => void | Promise<void>` (리다이렉트 직전 실행. 헤더 수정 등에 사용)
+    - `beforeRedirect`: `(nextConfig, response) => void | Promise<void>` (리다이렉트 직전 실행)
+        - `nextConfig`: 리다이렉트될 다음 요청에 사용될 설정 객체입니다. 이 객체를 수정하여 헤더를 추가하거나 URL을 변경하는 등의 작업을 수행할 수 있습니다.
+        - `response`: 리다이렉트를 유발한 원본 응답 객체입니다.
 - **platform**: (Optional) 플랫폼별 특화 기능 및 저수준 제어 옵션 객체. 이 객체에 포함된 옵션들은 모든 플랫폼에서 동일한 동작을 보장하지 않습니다.
     - **`cookies`**: `cookieMode: 'manual'`일 때, 요청과 함께 전송할 쿠키 객체 (Object/Dict).
         - **Serialization**: 객체는 `key=value` 쌍을 `; `로 이어 붙인 단일 문자열로 직렬화되어야 합니다.
