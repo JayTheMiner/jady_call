@@ -66,6 +66,7 @@
     - **Key Validation**: Header Key에 공백이나 제어 문자 등 HTTP 토큰으로 유효하지 않은 문자가 포함된 경우, **예외**를 발생시켜야 합니다.
     - **처리 규칙**: 라이브러리 내부에서 헤더를 병합하거나 덮어쓸 때, 키(Key)의 **대소문자를 구분하지 않고(Case-insensitive)** 처리해야 합니다. (예: 사용자가 `content-type`을 보내면, 라이브러리가 `Content-Type`을 중복해서 추가하지 않아야 함)
     - **Browser Limitation**: 브라우저 환경에서는 보안 정책상 `Host`, `User-Agent`, `Content-Length` 등 특정 헤더(Forbidden Header Name) 설정이 무시될 수 있습니다.
+    - **Precedence**: 사용자가 명시적으로 설정한 헤더는 라이브러리가 자동으로 생성하는 기본 헤더보다 항상 우선합니다. 특히, 헤더 값을 `null`로 설정하면 해당 헤더는 전송되지 않습니다.
 - **timeout**: (Optional) 응답 수신 대기 시간 (Number, ms 단위, 기본값: 30000). **(시간 초과 시 `'ETIMEDOUT'` 예외 발생, 0 설정 시 무제한)**
     - **의미**: 소켓 연결 후, 서버로부터 첫 바이트(TTFB)를 포함한 응답 데이터가 수신되기 시작하는 것을 기다리는 시간 (Idle Timeout)입니다. 이는 모든 플랫폼에서 가장 일관되게 구현 가능한 시간 제한입니다.
 - **totalTimeout**: (Optional) 요청의 전체 수명 주기 제한 시간 (Number, ms 단위, 기본값: 0).
@@ -115,7 +116,9 @@
     - `responseType`이 `'stream'`, `'bytes'`, `'arraybuffer'`, `'blob'`인 경우, 이 설정은 **무시(Ignored)**됩니다. (항상 원본 바이너리 반환)
     - 예: `'euc-kr'`, `'windows-1252'`
 - **jsonReplacer**: (Optional) JSON 직렬화 시 사용할 변환 함수 또는 화이트리스트 배열. (JS: `JSON.stringify`의 replacer, Python: `default` 함수 등 매핑)
+    - **Note**: 함수 시그니처나 타입은 각 언어의 표준 JSON 라이브러리 사양을 따릅니다.
 - **jsonReviver**: (Optional) JSON 파싱 시 사용할 변환 함수. (JS: `JSON.parse`의 reviver, Python: `object_hook` 등 매핑)
+    - **Note**: 함수 시그니처나 타입은 각 언어의 표준 JSON 라이브러리 사양을 따릅니다.
 - **decompress**: (Optional) 응답 본문 자동 압축 해제 여부 (Boolean, 기본값: `true`).
     - `false`로 설정 시, 압축된 바이너리 데이터가 그대로 `body`에 반환됩니다. (다운로드 등에 사용)
     - `true` 설정 시(기본값), `Accept-Encoding: gzip, deflate, br` 헤더가 자동으로 포함됩니다.
@@ -155,10 +158,14 @@
         - `connect`: 소켓 연결 대기 시간 (Number, ms).
         - `write`: 데이터 전송(Upload) 대기 시간 (Number, ms).
     - **`proxy`**: 프록시 서버 설정 (String | Object | `false`).
+        - **String**: `http://user:pass@proxy.com:8080`
+        - **Object**: `{ host, port, protocol, auth: { username, password }, headers, noProxy }`
+            - `auth` 필드가 `host` 문자열의 인증 정보보다 우선합니다.
         - `false` 설정 시 시스템 프록시를 무시하고 직접 연결합니다.
     - **`ssl`**: SSL/TLS 설정 객체. (`ca`, `cert`, `key` 등)
     - **`agent`**: HTTP 연결 풀링을 위한 플랫폼별 에이전트 객체.
     - **`http2`**: HTTP/2 사용 여부 (Boolean).
+        - `true` 설정 시 ALPN을 통해 연결을 시도하며, 미지원 시 **HTTP/1.1로 폴백**하는 것을 권장합니다.
     - **`keepAlive`**: HTTP Keep-Alive 활성화 여부 (Boolean).
     - **`maxHeaderSize`**: 응답 헤더의 최대 크기 제한 (Number, bytes).
     - **`maxContentLength`**: 요청 본문의 최대 크기 제한 (Number, bytes).
@@ -171,7 +178,7 @@
     - **`preserveHeaderCase`**: 헤더 키 대소문자 유지 여부 (Boolean).
     - **`referrer`**: Referer 헤더 값 (String).
     - **`referrerPolicy`**: Referrer 정책 (String).
-    - **`trace`**: 상세 디버깅 이벤트 콜백 함수.
+    - **`trace`**: 상세 디버깅 이벤트 콜백 함수. (예: `lookup`, `connect`, `secureConnect`, `upload`, `download` 등)
     - **`native`**: 각 언어/런타임의 고유 옵션을 담는 객체.
 
 ## 2. 표준 응답 구조 (The Output)
@@ -240,7 +247,7 @@
     - **빈 배열(`[]`)**: **제외(Omit)**합니다.
     - **빈 문자열(`""`)**: `key=` 형태로 전송합니다.
     - **배열 내부**의 `null`, `undefined` 값도 **제외**합니다. (예: `[1, null, 2]` -> `key=1&key=2`)
-    - **Date 객체**: **ISO 8601** 문자열(`YYYY-MM-DDTHH:mm:ss.sssZ`)로 변환합니다. (URL-safe 해야 함)
+    - **Date 객체**: **ISO 8601** 문자열(`YYYY-MM-DDTHH:mm:ss.sssZ`)로 변환합니다. (이후 전체 쿼리 스트링은 표준 `x-www-form-urlencoded` 규칙에 따라 인코딩됩니다.)
     - **Number**: 문자열로 변환합니다. (예: `123` -> `"123"`)
     - `true`, `false`: 문자열 `"true"`, `"false"`로 변환합니다.
 - **JSON Body (`data`)**:
