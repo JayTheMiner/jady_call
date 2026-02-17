@@ -20,11 +20,20 @@
 - **Explicit Over Implicit**: 암시적인 "마법" 동작보다는 명시적인 설정을 우선합니다. 사용자가 설정하지 않은 값에 대해 라이브러리가 임의로 추측하여 동작을 변경하지 않아야 하며, 모든 기본값(Default)은 문서에 명시된 대로만 적용되어야 합니다.
 - **RFC Compliance**: 동작이 모호하거나 문서에 정의되지 않은 엣지 케이스의 경우, 최신 HTTP RFC 표준(RFC 723x, RFC 911x 등)을 따르는 것을 원칙으로 합니다.
 - **Secure by Default**: 편의성보다 보안을 우선합니다. 모든 보안 관련 설정(SSL 검증, 살균 등)의 기본값은 가장 안전한 상태여야 합니다.
+- **Security by Design**: 보안은 라이브러리 설계 및 구현의 모든 단계에서 핵심 고려 사항이어야 합니다. 데이터 처리, 옵션 설계, 에러 보고 방식 등 모든 측면에서 보안을 최우선으로 고려해야 합니다.
 - **UTF-8 by Default**: 문자열 처리(URL, JSON, Body, Auth 등)의 기본 인코딩은 **UTF-8**입니다. 단, HTTP 헤더와 같이 표준 스펙이 특정 인코딩(ASCII/ISO-8859-1)을 강제하는 경우는 예외입니다.
 - **Caller Ownership**: 리소스(Stream, File Handle 등)의 수명 주기는 **호출자(Caller)**가 관리합니다.
     - **Input**: 사용자가 전달한 스트림이나 파일 핸들은 라이브러리가 읽기만 할 뿐, 전송 후 자동으로 닫지 않습니다.
+    - **Idempotency**: `jady.call`은 재시도 메커니즘을 제공하지만, 요청의 **멱등성(Idempotency)**은 보장하지 않습니다. 쓰기 작업(Write)의 경우, 서버 측에서 중복 실행에 대한 방지 로직을 구현하거나, 사용자가 직접 제어해야 합니다.
+    - **Callback Security**: `hooks`와 같은 콜백 함수를 통해 요청 설정을 변경할 때 보안에 유의해야 합니다. 콜백 내부에서 민감한 헤더를 수정하거나, 로컬 파일 시스템에 접근하는 등의 작업은 보안 위험을 초래할 수 있습니다.
     - **Output**: `responseType: 'stream'` 등으로 반환된 리소스는 사용자가 명시적으로 닫아야(Close) 합니다.
 - **Type Safety**: 정적 타입 언어(TypeScript, Java, Go 등) 구현체는 컴파일 타임에 오류를 잡을 수 있도록 정확한 타입 정의와 제네릭(Generics)을 제공해야 합니다.
+- **Atomic Operation**: 모든 요청은 성공 또는 실패의 원자적(Atomic) 결과를 가져야 합니다. 부분적인 성공이나 어중간한 상태(Partial State)로 남지 않아야 하며, 실패 시에는 명확한 예외를 발생시켜야 합니다.
+- **Date Formats**: Date 객체는 서버와 호환성을 위해 ISO 8601 문자열로 직렬화해야 합니다.
+- **Cleanup on Failure**: 요청이 실패하거나 취소(Abort)된 경우, 라이브러리는 내부적으로 생성한 모든 리소스(소켓, 타이머, 메모리 버퍼 등)를 즉시 해제(Cleanup)해야 합니다.
+- **No Global Side Effect**: 라이브러리의 동작은 전역 환경(Global Scope, Process Environment 등)을 변경하거나 오염시키지 않아야 합니다.
+- **Traceability**: 요청의 전체 수명 주기(Life-cycle) 동안 식별자(`requestId`)와 메타데이터(`meta`)는 보존되어야 하며, 로그나 에러 객체를 통해 추적 가능해야 합니다.
+- **Deterministic Execution**: 비동기 로직(Hooks, Retry, Redirect 등)의 실행 순서는 네트워크 상태나 시스템 부하에 관계없이 항상 결정론적(Deterministic)이어야 합니다. (Race Condition 방지)
 
 ## 1. 필수로 포함되어야 할 파라미터 (The Input)
 
