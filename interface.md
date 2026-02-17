@@ -37,6 +37,8 @@
 - **Deterministic Execution**: 비동기 로직(Hooks, Retry, Redirect 등)의 실행 순서는 네트워크 상태나 시스템 부하에 관계없이 항상 결정론적(Deterministic)이어야 합니다. (Race Condition 방지)
 
 - **Developer Experience First**: API는 직관적이어야 하며, 에러 메시지는 명확하고 디버깅에 유용해야 합니다. 잘 정리된 문서는 라이브러리의 핵심적인 부분으로 간주됩니다.
+-   **Observability**: 로깅, 메트릭, 트레이싱을 통해 라이브러리의 내부 동작을 관찰할 수 있도록 지원하는 것을 고려해볼 수 있습니다.
+
 - **Clear Versioning Policy**: 모든 릴리즈는 유의적 버전(Semantic Versioning) 2.0.0 규칙을 엄격히 준수합니다. 이를 통해 사용자는 버전 업그레이드에 따른 호환성 변경을 명확히 예측할 수 있습니다. 주요 변경(Breaking Change)은 반드시 메이저 버전 업데이트를 통해 이루어지며, 상세한 마이그레이션 가이드를 함께 제공합니다.
 - **Performance as a Feature**: 라이브러리는 최소한의 오버헤드와 효율적인 리소스 사용을 목표로 합니다. 불필요한 메모리 할당이나 연산을 지양하고, 대용량 데이터 처리 시에도 안정적인 성능을 제공해야 합니다.
 - **Extensibility & Testability**: 라이브러리의 핵심 기능은 `hooks`나 `adapter`와 같은 명확한 인터페이스를 통해 확장 가능해야 합니다. 또한, 모든 동작은 예측 가능해야 하며, 사용자가 자신의 코드를 쉽게 테스트할 수 있도록 Mocking과 같은 테스트 전략을 지원하는 구조를 지향합니다.
