@@ -59,7 +59,9 @@
     - **고급 설정**: Value를 `{ file: ..., filename?: string, contentType?: string }` 객체로 전달하여 파일명과 타입을 명시할 수 있습니다. (배열 내부 요소로도 사용 가능)
         - **Tip**: JSON 메타데이터 등 파일이 아닌 파트도 `Content-Type` 지정이 필요하다면 이 방식을 통해 `files`에 포함시킬 수 있습니다.
         - **Default Filename**: Stream이나 Buffer 등 파일명이 없는 객체가 전달되고 `filename` 옵션도 없는 경우, 라이브러리는 `'blob'` 또는 `'file'` 등 **임의의 기본 파일명**을 생성하여 `Content-Disposition` 헤더에 포함해야 합니다. (서버 거부 방지)
+        - **Default Content-Type**: 명시되지 않은 경우 파일 확장자 등을 통해 추론하며, 추론 불가능 시 `application/octet-stream`을 사용합니다.
     - **Browser Environment**: 브라우저에서는 보안상 파일 경로(String)를 사용할 수 없으며, `File` 또는 `Blob` 객체를 직접 전달해야 합니다.
+    - **Note**: 빈 `files` 객체(`{}`)는 내용이 없는 `multipart/form-data` 요청을 생성하며, 이는 일부 서버에서 올바르게 처리되지 않을 수 있습니다.
     - **Resource Management (Server)**: 전달된 Stream이나 파일 핸들은 요청 완료 후에도 라이브러리가 **자동으로 닫지 않습니다(No Auto-close)**. 리소스 관리는 호출자의 책임입니다.
     - 이 값이 존재하면 `Content-Type` 헤더는 **사용자 설정 값을 무시하고** 자동으로 `multipart/form-data; boundary=...`로 설정됩니다.
 - **headers**: (Optional) HTTP 헤더 (Object/Dict).
@@ -67,9 +69,11 @@
     - **Key Validation**: Header Key에 공백이나 제어 문자 등 HTTP 토큰으로 유효하지 않은 문자가 포함된 경우, **예외**를 발생시켜야 합니다.
     - **처리 규칙**: 라이브러리 내부에서 헤더를 병합하거나 덮어쓸 때, 키(Key)의 **대소문자를 구분하지 않고(Case-insensitive)** 처리해야 합니다. (예: 사용자가 `content-type`을 보내면, 라이브러리가 `Content-Type`을 중복해서 추가하지 않아야 함)
     - **Browser Limitation**: 브라우저 환경에서는 보안 정책상 `Host`, `User-Agent`, `Content-Length` 등 특정 헤더(Forbidden Header Name) 설정이 무시될 수 있습니다.
+    - **Encoding**: 헤더 값은 **ASCII/ISO-8859-1** 범위 내의 문자여야 합니다. 비-ASCII 문자(예: UTF-8 한글)가 포함된 경우 플랫폼에 따라 인코딩 깨짐이나 예외가 발생할 수 있으므로, 사용자가 직접 인코딩(예: RFC 5987)해서 전달해야 합니다.
     - **Precedence**: 사용자가 명시적으로 설정한 헤더는 라이브러리가 자동으로 생성하는 기본 헤더보다 항상 우선합니다. 특히, 헤더 값을 `null`로 설정하면 해당 헤더는 전송되지 않습니다.
 - **timeout**: (Optional) 응답 수신 대기 시간 (Number, ms 단위, 기본값: 30000). **(시간 초과 시 `'ETIMEDOUT'` 예외 발생, 0 설정 시 무제한)**
     - **의미**: 소켓 연결 후, 서버로부터 첫 바이트(TTFB)를 포함한 응답 데이터가 수신되기 시작하는 것을 기다리는 시간 (Idle Timeout)입니다. 이는 모든 플랫폼에서 가장 일관되게 구현 가능한 시간 제한입니다.
+    - **Redirect**: 리다이렉트 발생 시, 새로운 요청에 대해 타이머가 초기화됩니다.
 - **totalTimeout**: (Optional) 요청의 전체 수명 주기 제한 시간 (Number, ms 단위, 기본값: 0).
     - **의미**: DNS 조회, 연결, 요청 전송, 재시도, 리다이렉트를 포함한 모든 과정이 이 시간 내에 완료되어야 함을 의미합니다. 라이브러리는 이 시간 제한을 반드시 준수해야 합니다.
     - `0`은 무제한을 의미합니다.
@@ -77,7 +81,7 @@
     - `responseType`이 `'stream'`인 경우, 이 옵션은 **무시(Ignored)**됩니다. (스트림은 버퍼링되지 않음)
 - **requestId**: (Optional) 요청 식별자 (String). (설정하지 않으면 UUID 등을 자동 생성하여 할당 권장)
 - **auth**: (Optional) 인증 정보 객체.
-    - Basic Auth: `{ username: 'user', password: 'pw' }`
+    - Basic Auth: `{ username: 'user', password: 'pw' }` (RFC 7617에 따라 **UTF-8**로 인코딩합니다.)
     - Bearer Token: `{ bearer: 'token_string' }` (헤더에 `Authorization: Bearer ...` 자동 추가)
     - 주의: `headers`에 `Authorization` 값이 이미 존재하면, 이 옵션은 **무시**됩니다.
     - **Ambiguity**: Basic, Bearer 등 여러 인증 타입을 동시에 지정하면 **예외**를 발생시켜야 합니다.
@@ -92,8 +96,10 @@
 - **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용. 브라우저 환경에서는 보안 정책에 따라 무시되거나 제한될 수 있음)
 - **retry**: (Optional) 실패 시 재시도 횟수 (Number, 기본값: 0).
     - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
+    - **Precedence**: 재시도 로직은 `validateStatus`보다 **먼저** 동작합니다. (예: 500 에러 발생 시, `validateStatus`가 성공으로 설정되어 있어도 재시도 정책에 따라 재시도를 우선 수행합니다. 재시도가 모두 실패하면 그때 `validateStatus`를 적용합니다.)
     - **Retry-After**: 429 또는 503 응답에 `Retry-After` 헤더가 포함된 경우, `retryDelay` 설정보다 우선하여 해당 시간만큼 대기 후 재시도해야 합니다. (초 단위, HTTP-Date 형식 모두 지원해야 함)
     - **Timeout 충돌**: `Retry-After` 대기 시간이 남은 `totalTimeout`을 초과할 경우, 재시도하지 않고 즉시 **`'ETIMEDOUT'`** 예외를 발생시켜야 합니다.
+    - **Stream Limitation**: `responseType: 'stream'`인 경우, 재시도 로직은 **응답 헤더가 수신되기 전(Promise Resolve 전)**까지만 동작합니다. 스트림 데이터를 읽는 도중(Promise Resolve 후)에 발생하는 네트워크 에러는 자동 재시도되지 않습니다.
 - **retryCondition**: (Optional) 재시도 여부를 결정하는 커스텀 함수. `(error, retryCount) => boolean | Promise<boolean>`
     - 이 함수가 설정되면, **기본 재시도 조건(네트워크 오류, 5xx, 429)은 무시되고** 이 함수의 반환값에 따라서만 재시도가 결정됩니다. 이를 통해 `401` 응답 후 토큰 갱신 재시도 등 완전히 커스텀된 로직을 구현할 수 있습니다.
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number | Function, ms 단위, 기본값: 0).
@@ -103,8 +109,8 @@
     - Mocking, 테스팅, 혹은 특수한 프로토콜 처리를 위해 내부 로직을 대체할 때 사용합니다.
 - **responseType**: (Optional) 응답 데이터의 타입 지정 (String, 기본값: `'auto'`).
     - `'auto'`: 아래의 **결정론적 규칙**에 따라 JSON, Text, Binary 자동 처리.
-        - 1. `Content-Type` 헤더가 `application/json`이거나 `+json` 접미사(예: `application/problem+json`)를 포함하면 **JSON**으로 처리.
-        - 2. 위 조건에 해당하지 않고, `Content-Type`이 `text/`로 시작하거나 `application/xml`, `application/javascript` 등 명백한 텍스트 타입이면 **Text**로 처리.
+        - 1. `Content-Type` 헤더가 `application/json`이거나 `+json` 접미사(예: `application/problem+json`)를 포함하면 **JSON**으로 처리합니다.
+        - 2. 위 조건에 해당하지 않고, `Content-Type`이 `text/`로 시작하거나 `application/xml`, `application/javascript` 등 명백한 텍스트 타입이면 **Text**로 처리합니다.
         - 3. 그 외의 모든 경우는 **Binary**로 처리.
     - `'json'`: 강제로 JSON 파싱 시도. (파싱 실패 시 `'EPARSE'` 예외 발생)
     - `'text'`: 강제로 텍스트로 반환.
@@ -115,6 +121,7 @@
     - `'document'`: **HTML Document** 객체로 반환. (브라우저 환경 등 DOM Parser 지원 시. 지원하지 않는 환경에서는 **예외**를 발생시켜야 함)
 - **responseEncoding**: (Optional) 응답 텍스트 디코딩 시 사용할 인코딩 (String, 기본값: `'utf-8'`).
     - `responseType`이 `'text'`, `'json'`이거나 `'auto'`(텍스트로 판별됨)일 때 적용됩니다.
+    - **Precedence**: 이 옵션은 `Content-Type` 헤더에 명시된 `charset`보다 우선합니다.
     - `responseType`이 `'stream'`, `'bytes'`, `'arraybuffer'`, `'blob'`인 경우, 이 설정은 **무시(Ignored)**됩니다. (항상 원본 바이너리 반환)
     - 예: `'euc-kr'`, `'windows-1252'`
 - **jsonReplacer**: (Optional) JSON 직렬화 시 사용할 변환 함수 또는 화이트리스트 배열. (JS: `JSON.stringify`의 replacer, Python: `default` 함수 등 매핑)
@@ -140,22 +147,24 @@
 - **onUploadProgress**: (Optional) 업로드 진행률 콜백 함수. `(progressEvent) => void`
     - `progressEvent`: `{ loaded: number, total?: number }` (브라우저 환경의 경우 XHR을 사용하거나, Fetch 스트림 지원이 필요할 수 있음)
     - **Node.js**: Stream 입력의 경우, 전체 크기(`Content-Length`)를 알 수 없으면 `total` 속성이 생략될 수 있습니다.
+    - **Multipart**: Stream이나 File이 포함된 `multipart/form-data` 전송 시, 전체 크기 계산이 어렵거나 비용이 많이 드는 경우 `total` 속성이 생략(`undefined`)될 수 있습니다.
     - **Async Handling**: 이 콜백은 비동기로 호출될 수 있지만, 라이브러리는 콜백의 완료를 기다리지 않습니다(Fire-and-forget).
 - **onDownloadProgress**: (Optional) 다운로드 진행률 콜백 함수. `(progressEvent) => void`
     - `progressEvent`: `{ loaded: number, total?: number }` (브라우저 환경의 경우 XHR을 사용하거나, Fetch 스트림 지원이 필요할 수 있음)
     - **Chunked Encoding**: 서버가 `Content-Length`를 보내지 않는 경우(Chunked), `total` 속성은 생략되거나 `0`일 수 있습니다.
     - **Stream Response**: `responseType: 'stream'`일 때도 플랫폼이 지원하는 경우 데이터 수신에 따라 이 콜백이 호출되어야 합니다.
     - **Async Handling**: 이 콜백은 비동기로 호출될 수 있지만, 라이브러리는 콜백의 완료를 기다리지 않습니다(Fire-and-forget).
+    - **Wire Bytes**: `loaded`와 `total`은 **압축된(Compressed) 전송 데이터** 기준입니다. (자동 압축 해제된 `body`의 크기와 다를 수 있음)
 - **meta**: (Optional) 사용자 정의 메타데이터 (Object/Dict).
     - 서버로 전송되지 않으며, 응답 객체나 에러 객체에 그대로 전달되어 로깅이나 후처리에 사용됩니다.
 - **hooks**: (Optional) 요청 라이프사이클 훅 (Object).
-    - `beforeRequest`: `(config) => config | Promise<config>` (요청 전송 전 실행)
-    - `afterResponse`: `(response) => response | Promise<response>` (최종적으로 반환될 응답 객체를 대상으로 실행됩니다. 재시도되는 중간 응답에는 실행되지 않습니다.)
+    - `beforeRequest`: `(config) => config | Promise<config>` (최초 요청 전송 전에 **1회** 실행됩니다.)
+    - `afterResponse`: `(response) => response | Promise<response>` (최종 응답 수신 후, `validateStatus` 체크 **이전**에 실행됩니다. 응답 데이터를 정규화하거나 변형할 때 사용합니다.)
     - `beforeError`: `(error) => error | Promise<error>` (최종적으로 던져질(throw) 에러 객체를 대상으로 실행됩니다. 재시도되는 중간 에러에는 실행되지 않습니다.)
     - `beforeRetry`: `(error, retryCount) => void | boolean | Config | Promise<...>` (재시도 직전 실행)
         - `false` 반환: 재시도 중단.
-        - `Config` 객체 반환: 해당 설정으로 다음 재시도를 수행합니다. (프록시 교체 등)
-        - **주의**: `Config`를 반환해도 `retryCount`는 초기화되지 않으며, 재시도 정책(횟수, 딜레이)은 원래 `Config`를 따릅니다.
+        - `Config` 객체 반환: 이 새로운 `Config`는 다음 재시도 시도에 사용됩니다. (프록시 교체, 딜레이 변경 등)
+        - **주의**: `Config`를 반환해도 `retryCount`는 계속 증가하며, 허용된 총 재시도 횟수는 **원래 `Config`**의 `retry` 설정에 의해 제어됩니다.
     - `beforeRedirect`: `(options, response) => void | Promise<void>` (리다이렉트 직전 실행. 헤더 수정 등에 사용)
 - **platform**: (Optional) 플랫폼별 특화 기능 및 저수준 제어 옵션 객체. 이 객체에 포함된 옵션들은 모든 플랫폼에서 동일한 동작을 보장하지 않습니다.
     - **`cookies`**: `cookieMode: 'manual'`일 때, 요청과 함께 전송할 쿠키 객체 (Object/Dict).
@@ -212,8 +221,8 @@
     - **rawBody**: (Optional) `saveRawBody: true`일 때 포함되는 원본 데이터 (String | Buffer).
     - **HEAD 요청**: `body`는 항상 **`null`**입니다.
     - **자동 압축 해제(Decompression)**: `decompress: true`(기본값)일 경우, Gzip, Deflate, Brotli 등으로 압축된 응답은 자동으로 해제된 후 처리됩니다.
-    - JSON 응답 (`application/json`): **Object/Dict**로 자동 파싱. **(BOM(Byte Order Mark) 제거 후 파싱, 실패 시 `'EPARSE'` 예외 발생)**
-    - 텍스트 응답 (`text/*`): **String**. (인코딩은 `Content-Type` 헤더를 따르며, 명시되지 않은 경우 **UTF-8**을 기본으로 사용)
+    - JSON 응답 (`application/json`): **Object/Dict**로 자동 파싱. **(BOM(Byte Order Mark) 제거 후 파싱, 실패 시 `'EPARSE'` 예외 발생)**. 디코딩 시에는 `responseEncoding` > `Content-Type`의 `charset` > `UTF-8` 순서의 우선순위를 따릅니다.
+    - 텍스트 응답 (`text/*`): **String**. 디코딩 시에는 `responseEncoding` > `Content-Type`의 `charset` > `UTF-8` 순서의 우선순위를 따릅니다.
     - 상태 코드 204 (No Content): **null**.
     - Stream 응답 (`responseType: 'stream'`): 언어별 **Readable Stream** 객체. (사용자가 스트림을 **닫을(Close/Destroy) 책임**이 있습니다)
     - Blob 응답 (`responseType: 'blob'`): **Blob** 객체. (브라우저 환경 등 Blob API 지원 시)
@@ -253,7 +262,7 @@
     - `null`, `undefined`: **제외(Omit)**합니다.
     - **빈 배열(`[]`)**: **제외(Omit)**합니다.
     - **빈 문자열(`""`)**: `key=` 형태로 전송합니다.
-    - **배열 내부**의 `null`, `undefined` 값도 **제외**합니다. (예: `[1, null, 2]` -> `key=1&key=2`)
+    - **배열 내부**의 `null`, `undefined` 값도 **제외**합니다. 이때 인덱스는 밀려서 채워집니다(Compact). (예: `paramsArrayFormat: 'index'`일 때 `[1, null, 2]` -> `key[0]=1&key[1]=2`)
     - **Date 객체**: **ISO 8601** 문자열(`YYYY-MM-DDTHH:mm:ss.sssZ`)로 변환합니다. (이후 전체 쿼리 스트링은 표준 `x-www-form-urlencoded` 규칙에 따라 인코딩됩니다.)
     - **Number**: 문자열로 변환합니다. (예: `123` -> `"123"`)
     - `true`, `false`: 문자열 `"true"`, `"false"`로 변환합니다.
@@ -267,7 +276,7 @@
 - **Headers (`headers`)**:
     - `undefined`: **제외(Omit)**합니다. (기본 헤더가 있다면 적용됨)
     - `null`: **제거(Remove)**합니다. (기본 헤더가 있어도 전송하지 않음)
-    - **배열(Array)** 값: 쉼표(`,`)로 이어 붙여 하나의 문자열로 만듭니다. (예: `['a', 'b']` -> `"a,b"`)
+    - **배열(Array)** 값: 쉼표(`,`)로 이어 붙여 하나의 문자열로 만듭니다. (예: `['a', 'b']` -> `"a,b"`). **단, `Cookie` 헤더는 세미콜론(`; `)으로 연결합니다.**
     - **Boolean 값**: 소문자 문자열 `"true"`, `"false"`로 변환합니다. (언어별 `True`/`true` 차이 제거)
     - **Date 객체**: **HTTP Date** 형식(UTC String)으로 변환합니다. (예: `Wed, 21 Oct 2015 07:28:00 GMT`)
     - 그 외의 값: **문자열(String)**로 변환하여 전송합니다.
@@ -275,7 +284,7 @@
 
 - **Multipart Body (`data` + `files`)**:
     - `files`가 존재하여 `multipart/form-data`로 전송되는 경우, `data` 필드의 처리 규칙:
-        - **제약 사항**: `data`는 반드시 **Plain Object**여야 합니다. (`FormData`, `URLSearchParams`, `Stream` 등 네이티브 객체와 혼용 불가)
+        - **제약 사항**: `data`는 반드시 **Plain Object**여야 합니다. 다른 타입이 전달될 경우 **예외**를 발생시켜야 합니다.
         - **Key Collision**: `data`와 `files`에 동일한 키가 존재할 경우, 덮어쓰지 않고 **두 값 모두 전송(Multi-value)**됩니다.
             - **Warning**: 이 경우 일부 서버 프레임워크는 파싱 에러를 일으키거나 하나의 값만 인식할 수 있습니다.
         - `null`, `undefined`: **제외(Omit)**합니다.
