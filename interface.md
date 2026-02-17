@@ -20,7 +20,7 @@
 - **params**: (Optional) Query Parameter (Object/Dict). 표준 URL Encoding (`application/x-www-form-urlencoded`)으로 변환. (공백은 `+`로 인코딩)
     - **배열(Array/List)** 값은 키 반복(`key=v1&key=v2`) 형태로 직렬화합니다.
     - **중첩 객체(Nested Object)**는 지원하지 않습니다. (필요 시 사용자가 JSON 문자열 등으로 변환하여 전달)
-    - `url`에 이미 쿼리 스트링이 존재하는 경우, `&`로 연결하여 병합합니다.
+    - `url`에 이미 쿼리 스트링이 존재하는 경우, `&`로 연결하여 병합합니다. (URL 끝의 `?`, `&` 중복 처리 필요)
     - **Hash(#) 처리**: URL에 Hash(Fragment)가 포함된 경우, Query String은 반드시 **Hash(#) 앞**에 삽입되어야 합니다.
     - **String / Native**: 문자열이나 `URLSearchParams` 등 네이티브 객체가 전달되면, 별도 변환 없이 그대로 쿼리 스트링으로 사용합니다.
 - **paramsArrayFormat**: (Optional) 배열 파라미터 직렬화 방식 (String, 기본값: `'repeat'`).
@@ -28,6 +28,8 @@
     - `'brackets'`: `key[]=v1&key[]=v2`
     - `'comma'`: `key=v1,v2`
     - `'index'`: `key[0]=v1&key[1]=v2`
+- **paramsSerializer**: (Optional) Query Parameter를 문자열로 변환하는 커스텀 함수. `(params) => string`
+    - 이 값이 설정되면 `paramsArrayFormat`은 무시됩니다.
 - **cookies**: (Optional) 요청과 함께 전송할 쿠키 객체 (Object/Dict).
     - `headers`의 `Cookie` 값과 병합됩니다.
 - **data**: (Optional) Request Body (Object/Dict, String, Byte Array, Stream).
@@ -37,13 +39,16 @@
     - **String**: 그대로 전송 (`Content-Type` 미지정 시 `text/plain; charset=utf-8` 자동 추가).
     - **Byte Array/Buffer**: 그대로 전송 (`Content-Type` 미지정 시 `application/octet-stream` 자동 추가).
     - **Stream**: (Readable Stream, File-like Object) 메모리에 적재하지 않고 스트리밍 전송 (`Content-Type` 미지정 시 `application/octet-stream` 자동 추가).
+    - **Form Data (`application/x-www-form-urlencoded`)**: `data`가 객체이고 헤더가 설정된 경우, `params`의 직렬화 규칙(`paramsArrayFormat`, `paramsSerializer`)을 따릅니다.
     - **Native Objects**: `FormData`, `URLSearchParams` (JS) 등 언어별 네이티브 객체가 전달되면, 별도 변환 없이 그대로 전송하며 적절한 `Content-Type`을 자동으로 설정합니다.
 - **files**: (Optional) 파일 업로드 객체 (Multipart/form-data).
     - Key: Field Name, Value: File Object / Blob / Stream / Path(Server-side only) **또는 그 배열(Array)**.
-    - **고급 설정**: Value를 `{ file: ..., filename?: string, contentType?: string }` 객체로 전달하여 파일명과 타입을 명시할 수 있습니다.
+    - **고급 설정**: Value를 `{ file: ..., filename?: string, contentType?: string }` 객체로 전달하여 파일명과 타입을 명시할 수 있습니다. (배열 내부 요소로도 사용 가능)
     - 이 값이 존재하면 `Content-Type` 헤더는 **사용자 설정 값을 무시하고** 자동으로 `multipart/form-data; boundary=...`로 설정됩니다.
 - **headers**: (Optional) HTTP 헤더 (Object/Dict).
+    - **보안**: Header Value에 줄바꿈 문자(`\n`, `\r`)가 포함된 경우, **예외(Exception)**를 발생시켜야 합니다. (HTTP Response Splitting 방지)
 - **timeout**: (Optional) 요청 타임아웃 (Number, ms 단위, 기본값: 5000 등 언어별 적절한 값). **(시간 초과 시 예외 발생, 0 설정 시 무제한)**
+- **maxContentLength**: (Optional) 요청 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
 - **maxBodyLength**: (Optional) 응답 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
 - **auth**: (Optional) 인증 정보 객체.
     - Basic Auth: `{ username: 'user', password: 'pw' }`
@@ -60,8 +65,16 @@
     - 네트워크 오류 및 5xx 응답 시 재시도합니다.
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number, ms 단위, 기본값: 0).
 - **socketPath**: (Optional) Unix Domain Socket 경로 (String). (설정 시 `url`의 호스트 부분은 무시됨. 예: `/var/run/docker.sock`)
+- **localAddress**: (Optional) 요청을 보낼 로컬 네트워크 인터페이스의 IP 주소 (String). (IP Rotation, Multi-homed 서버 등에서 사용)
 - **proxy**: (Optional) 프록시 서버 주소 (String). (예: `http://user:pass@proxy.com:8080`)
     - 주의: 브라우저 환경에서는 보안 정책상 무시될 수 있습니다.
+- **agent**: (Optional) HTTP 연결 풀링(Connection Pooling)을 위한 플랫폼별 에이전트 객체.
+    - Node.js: `http.Agent` / `https.Agent`
+    - Java: `OkHttpClient` 인스턴스
+    - Python: `Session` 객체 등
+    - 주의: 이 옵션이 설정되면 `proxy`, `ssl`, `keepAlive` 등 연결 관련 옵션은 무시될 수 있습니다. (에이전트 설정 우선)
+- **adapter**: (Optional) 실제 네트워크 요청을 수행하는 커스텀 어댑터 함수. `(config) => Promise<Response>`
+    - Mocking, 테스팅, 혹은 특수한 프로토콜 처리를 위해 내부 로직을 대체할 때 사용합니다.
 - **ssl**: (Optional) SSL/TLS 설정 객체 (Browser 환경에서는 무시됨).
     - `ca`: 커스텀 CA 인증서 (String/Buffer).
     - `cert`: 클라이언트 인증서 (String/Buffer).
@@ -69,13 +82,15 @@
     - `passphrase`: 개인키 비밀번호 (String).
 - **responseType**: (Optional) 응답 데이터의 타입 지정 (String, 기본값: `'auto'`).
     - `'auto'`: `Content-Type`에 따라 JSON, Text, Binary 자동 처리.
-    - `'json'`: 강제로 JSON 파싱 시도.
+    - `'json'`: 강제로 JSON 파싱 시도. (파싱 실패 시 `'EPARSE'` 예외 발생)
     - `'text'`: 강제로 텍스트로 반환.
     - `'bytes'`: Binary Data (Buffer/Bytes)로 반환.
     - `'stream'`: 스트림(Stream) 객체로 반환. (대용량 파일 처리 시 필수)
+    - `'blob'`: **Blob** 객체로 반환. (브라우저 환경 등 Blob API 지원 시)
 - **responseEncoding**: (Optional) 응답 텍스트 디코딩 시 사용할 인코딩 (String, 기본값: `'utf-8'`).
     - `responseType`이 `'text'`이거나 `'auto'`(텍스트로 판별됨)일 때 적용됩니다.
     - 예: `'euc-kr'`, `'windows-1252'`
+- **jsonReplacer**: (Optional) JSON 직렬화 시 사용할 변환 함수 또는 화이트리스트 배열. (JS: `JSON.stringify`의 replacer, Python: `default` 함수 등 매핑)
 - **decompress**: (Optional) 응답 본문 자동 압축 해제 여부 (Boolean, 기본값: `true`).
     - `false`로 설정 시, 압축된 바이너리 데이터가 그대로 `body`에 반환됩니다. (다운로드 등에 사용)
 - **xsrfCookieName**: (Optional) CSRF 토큰을 읽어올 쿠키 이름 (String, 기본값: `'XSRF-TOKEN'`). (브라우저 환경 전용)
@@ -83,12 +98,24 @@
 - **validateStatus**: (Optional) 성공(`ok: true`)으로 간주할 상태 코드 범위 지정 함수.
     - 기본값: `(status) => status >= 200 && status < 300`
 - **keepAlive**: (Optional) HTTP Keep-Alive 활성화 여부 (Boolean, 기본값: `true`). (성능 최적화)
+    - `agent` 옵션이 설정된 경우, 이 값은 무시됩니다.
 - **cache**: (Optional) 캐시 정책 (String, 기본값: `'default'`).
     - `'default'`, `'no-store'`, `'reload'`, `'no-cache'`, `'force-cache'`, `'only-if-cached'` (Fetch API 표준 준수)
+- **family**: (Optional) DNS 조회 시 사용할 IP 버전 (Number).
+    - `4`: IPv4만 사용.
+    - `6`: IPv6만 사용.
+    - `0`: 둘 다 사용 (기본값).
+- **lookup**: (Optional) 커스텀 DNS 조회 함수/인터페이스. (언어별 DNS 해석 로직 주입)
+- **referrer**: (Optional) 요청 헤더의 Referer 값 (String).
+- **referrerPolicy**: (Optional) Referrer 정책 (String). (예: `'no-referrer'`, `'origin'`, `'unsafe-url'` 등)
+- **integrity**: (Optional) 리소스 무결성 검증을 위한 해시값 (String). (예: `sha384-...`) (Fetch API 표준 준수)
 - **signal**: (Optional) 요청 취소를 위한 시그널 객체. (JS: `AbortSignal`, Python/Java: Cancellation Token/Context 등 언어별 표준 취소 메커니즘 매핑)
 - **onUploadProgress**: (Optional) 업로드 진행률 콜백 함수. `(progressEvent) => void`
     - `progressEvent`: `{ loaded: number, total?: number }`
 - **onDownloadProgress**: (Optional) 다운로드 진행률 콜백 함수. `(progressEvent) => void`
+    - `progressEvent`: `{ loaded: number, total?: number }`
+- **meta**: (Optional) 사용자 정의 메타데이터 (Object/Dict).
+    - 서버로 전송되지 않으며, 응답 객체나 에러 객체에 그대로 전달되어 로깅이나 후처리에 사용됩니다.
 
 ## 2. 표준 응답 구조 (The Output)
 
@@ -96,7 +123,9 @@
 
 - **status**: HTTP 상태 코드 (Number)
 - **statusText**: HTTP 상태 메시지 (String). (예: "OK", "Not Found")
+- **duration**: 요청 시작부터 응답 완료까지 걸린 시간 (Number, ms 단위).
 - **url**: 최종 응답 URL (String). (리다이렉트가 발생한 경우 리다이렉트 된 최종 주소)
+- **config**: 요청 시 사용된 설정 객체 (Object). (`meta` 포함)
 - **body**: 실제 응답 데이터.
     - `responseType` 설정이 최우선으로 적용됩니다.
     - **HEAD 요청**: `body`는 항상 **`null`**입니다.
@@ -104,7 +133,8 @@
     - JSON 응답 (`application/json`): **Object/Dict**로 자동 파싱. **(파싱 실패 시 Raw String 반환)**
     - 텍스트 응답 (`text/*`): **String**. (인코딩은 `Content-Type` 헤더를 따르며, 명시되지 않은 경우 **UTF-8**을 기본으로 사용)
     - 상태 코드 204 (No Content): **null**.
-    - Stream 응답 (`responseType: 'stream'`): 언어별 **Readable Stream** 객체. (사용자가 직접 스트림을 닫거나 소비해야 합니다)
+    - Stream 응답 (`responseType: 'stream'`): 언어별 **Readable Stream** 객체. (Promise는 **Headers 수신 직후** resolve 되며, 이후 데이터 수신 에러는 Stream 이벤트로 처리해야 합니다)
+    - Blob 응답 (`responseType: 'blob'`): **Blob** 객체. (브라우저 환경 등 Blob API 지원 시)
     - 그 외 (이미지, 바이너리 등): **Byte Array / Buffer**.
 - **headers**: 응답 헤더 (Object). **모든 Key는 소문자(lowercase)로 정규화**됩니다.
     - 기본값: **String** (여러 값인 경우 `, `로 결합).
@@ -115,6 +145,12 @@
 
 - **네트워크 오류**: DNS 조회 실패, 연결 거부 등 아예 응답을 받지 못한 경우는 **예외(Exception)**를 발생시켜야 합니다.
 - **HTTP 오류**: 4xx, 5xx 응답은 예외가 아니라 정상 응답으로 간주하며, `ok: false`와 해당 `status`를 반환합니다.
+- **표준 에러 코드 (Standard Error Codes)**: 발생한 예외 객체는 가능한 한 다음 `code` 속성을 포함해야 합니다.
+    - `'ETIMEDOUT'`: 요청 타임아웃.
+    - `'ECANCELED'`: 요청 취소 (Signal).
+    - `'ENETWORK'`: 네트워크 연결 실패.
+    - `'EPARSE'`: 응답 데이터 파싱 실패 (`responseType: 'json'` 등).
+    - `'EMAXSIZE'`: 응답 본문 크기 제한 초과.
 
 ## 4. 타입 지원 (Type Support - 권장사항)
 
@@ -126,6 +162,7 @@
 - **Query Parameters (`params`)**:
     - `null`, `undefined`: **제외(Omit)**합니다.
     - **빈 배열(`[]`)**: **제외(Omit)**합니다.
+    - **빈 문자열(`""`)**: `key=` 형태로 전송합니다.
     - **배열 내부**의 `null`, `undefined` 값도 **제외**합니다. (예: `[1, null, 2]` -> `key=1&key=2`)
     - **Date 객체**: **ISO 8601** 문자열로 변환합니다.
     - **Number**: 문자열로 변환합니다. (예: `123` -> `"123"`)
@@ -133,16 +170,19 @@
 - **JSON Body (`data`)**:
     - `undefined`: **제외(Omit)**합니다.
     - `null`: **`null` 값 그대로 전송**합니다. (DB 필드 초기화 등의 목적)
+    - **NaN, Infinity**: **`null`**로 변환합니다. (JSON 표준 준수)
     - **Large Integer (JS)**: JavaScript 환경에서 64-bit 정수(BigInt)는 `JSON.parse` 시 정밀도 손실이 발생할 수 있습니다. 이 경우 `responseType: 'text'` 사용을 권장합니다.
 - **Headers (`headers`)**:
     - `null`, `undefined`: **제외(Omit)**합니다.
     - **배열(Array)** 값: 쉼표(`,`)로 이어 붙여 하나의 문자열로 만듭니다. (예: `['a', 'b']` -> `"a,b"`)
     - **Boolean 값**: 소문자 문자열 `"true"`, `"false"`로 변환합니다. (언어별 `True`/`true` 차이 제거)
+    - **Date 객체**: **HTTP Date** 형식(UTC String)으로 변환합니다. (예: `Wed, 21 Oct 2015 07:28:00 GMT`)
     - 그 외의 값: **문자열(String)**로 변환하여 전송합니다.
     - **Key 매칭**: 내부 로직에서 헤더를 확인할 때(예: `Content-Type`), **대소문자를 구분하지 않고(Case-insensitive)** 처리해야 합니다.
 
 - **Multipart Body (`data` + `files`)**:
     - `files`가 존재하여 `multipart/form-data`로 전송되는 경우, `data` 필드의 처리 규칙:
+        - `null`, `undefined`: **제외(Omit)**합니다.
         - **배열(Array)**: 동일한 Key로 여러 필드를 전송합니다. (예: `tags: ['a', 'b']` -> `tags=a`, `tags=b`)
         - **Date 객체**: **ISO 8601** 문자열로 변환하여 전송합니다.
         - **Boolean 값**: 소문자 문자열 `"true"`, `"false"`로 변환하여 전송합니다.
