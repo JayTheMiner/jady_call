@@ -18,13 +18,17 @@
     - **배열(Array/List)** 값은 키 반복(`key=v1&key=v2`) 형태로 직렬화합니다.
     - **중첩 객체(Nested Object)**는 지원하지 않습니다. (필요 시 사용자가 JSON 문자열 등으로 변환하여 전달)
     - `url`에 이미 쿼리 스트링이 존재하는 경우, `&`로 연결하여 병합합니다.
-- **data**: (Optional) Request Body (Object/Dict, String, Byte Array).
+    - **Hash(#) 처리**: URL에 Hash(Fragment)가 포함된 경우, Query String은 반드시 **Hash(#) 앞**에 삽입되어야 합니다.
+- **data**: (Optional) Request Body (Object/Dict, String, Byte Array, Stream).
+    - **GET, HEAD 메서드**: `data` 및 `files` 값이 존재하더라도 **무시(Ignored)**하고 전송하지 않습니다. (JS Fetch API 등과의 호환성 유지)
     - **Object/Dict**: 기본적으로 **JSON 직렬화** (`Content-Type: application/json` 자동 추가).
         - 예외: 헤더에 `application/x-www-form-urlencoded`가 명시된 경우, **Query String** 형태로 변환하여 전송합니다.
-    - **String**: 그대로 전송 (`Content-Type` 미지정 시 `text/plain` 자동 추가).
+    - **String**: 그대로 전송 (`Content-Type` 미지정 시 `text/plain; charset=utf-8` 자동 추가).
     - **Byte Array/Buffer**: 그대로 전송 (`Content-Type` 미지정 시 `application/octet-stream` 자동 추가).
+    - **Stream**: (Readable Stream, File-like Object) 메모리에 적재하지 않고 스트리밍 전송 (`Content-Type` 미지정 시 `application/octet-stream` 자동 추가).
 - **files**: (Optional) 파일 업로드 객체 (Multipart/form-data).
     - Key: Field Name, Value: File Object / Blob / Stream / Path(Server-side only) **또는 그 배열(Array)**.
+    - **고급 설정**: Value를 `{ file: ..., filename?: string, contentType?: string }` 객체로 전달하여 파일명과 타입을 명시할 수 있습니다.
     - 이 값이 존재하면 `Content-Type` 헤더는 **사용자 설정 값을 무시하고** 자동으로 `multipart/form-data; boundary=...`로 설정됩니다.
 - **headers**: (Optional) HTTP 헤더 (Object/Dict).
 - **timeout**: (Optional) 요청 타임아웃 (Number, ms 단위, 기본값: 5000 등 언어별 적절한 값). **(시간 초과 시 예외 발생)**
@@ -56,6 +60,7 @@
 - **status**: HTTP 상태 코드 (Number)
 - **body**: 실제 응답 데이터.
     - `responseType` 설정이 최우선으로 적용됩니다.
+    - **HEAD 요청**: `body`는 항상 **`null`**입니다.
     - **자동 압축 해제(Decompression)**: Gzip, Deflate, Brotli 등으로 압축된 응답은 자동으로 해제된 후 처리됩니다.
     - JSON 응답 (`application/json`): **Object/Dict**로 자동 파싱. **(파싱 실패 시 Raw String 반환)**
     - 텍스트 응답 (`text/*`): **String**. (인코딩은 `Content-Type` 헤더를 따르며, 명시되지 않은 경우 **UTF-8**을 기본으로 사용)
@@ -88,14 +93,18 @@
 - **JSON Body (`data`)**:
     - `undefined`: **제외(Omit)**합니다.
     - `null`: **`null` 값 그대로 전송**합니다. (DB 필드 초기화 등의 목적)
+    - **Large Integer (JS)**: JavaScript 환경에서 64-bit 정수(BigInt)는 `JSON.parse` 시 정밀도 손실이 발생할 수 있습니다. 이 경우 `responseType: 'text'` 사용을 권장합니다.
 - **Headers (`headers`)**:
     - `null`, `undefined`: **제외(Omit)**합니다.
     - **배열(Array)** 값: 쉼표(`,`)로 이어 붙여 하나의 문자열로 만듭니다. (예: `['a', 'b']` -> `"a,b"`)
+    - **Boolean 값**: 소문자 문자열 `"true"`, `"false"`로 변환합니다. (언어별 `True`/`true` 차이 제거)
     - 그 외의 값: **문자열(String)**로 변환하여 전송합니다.
     - **Key 매칭**: 내부 로직에서 헤더를 확인할 때(예: `Content-Type`), **대소문자를 구분하지 않고(Case-insensitive)** 처리해야 합니다.
 
 - **Multipart Body (`data` + `files`)**:
     - `files`가 존재하여 `multipart/form-data`로 전송되는 경우, `data` 필드의 처리 규칙:
         - **배열(Array)**: 동일한 Key로 여러 필드를 전송합니다. (예: `tags: ['a', 'b']` -> `tags=a`, `tags=b`)
+        - **Date 객체**: **ISO 8601** 문자열로 변환하여 전송합니다.
+        - **Boolean 값**: 소문자 문자열 `"true"`, `"false"`로 변환하여 전송합니다.
         - **객체(Object)**: JSON 문자열로 변환하여 전송합니다.
         - 그 외: 문자열로 변환하여 전송합니다.
