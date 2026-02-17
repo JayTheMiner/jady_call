@@ -63,6 +63,8 @@
 - **maxBodyLength**: (Optional) 응답 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
     - `Content-Length` 헤더가 존재하면 이를 기준으로 미리 검사하고, 없으면 수신된 바이트 수를 기준으로 검사합니다.
 - **maxRate**: (Optional) 다운로드 대역폭 제한 (Number, bytes/sec). (지원하는 플랫폼에 한함)
+- **expect100**: (Optional) `true` 설정 시, `Expect: 100-continue` 헤더를 전송하고 서버 승인 후 본문을 전송합니다. (대용량 업로드 시 대역폭 절약)
+- **blockPrivateIP**: (Optional) `true` 설정 시, DNS 조회 결과가 사설 IP(Private IP) 대역인 경우 요청을 차단합니다. (SSRF 방지)
 - **saveRawBody**: (Optional) `true` 설정 시, 파싱된 `body` 외에 원본 텍스트/버퍼를 `rawBody` 필드로 응답 객체에 포함합니다. (HMAC 검증 등에 사용)
 - **requestId**: (Optional) 요청 식별자 (String). (설정하지 않으면 UUID 등을 자동 생성하여 할당 권장)
 - **auth**: (Optional) 인증 정보 객체.
@@ -81,10 +83,12 @@
     - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
 - **retryMethods**: (Optional) 재시도를 허용할 HTTP 메서드 배열 (String[], 기본값: `['GET', 'PUT', 'HEAD', 'DELETE', 'OPTIONS', 'TRACE']`).
     - **POST, PATCH** 등 비멱등(Non-idempotent) 메서드는 기본적으로 재시도하지 않습니다. (중복 처리 방지)
+- **retryCondition**: (Optional) 재시도 여부를 결정하는 커스텀 함수. `(error) => boolean`
+    - 이 함수가 설정되면 `retryMethods` 및 기본 상태 코드 검사는 무시되고, 이 함수의 반환값에 따라 재시도합니다.
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number | Function, ms 단위, 기본값: 0).
     - **Number**: 고정 대기 시간.
     - **Function**: `(retryCount, error) => number` (지수 백오프 등 동적 계산 가능).
-- **socketPath**: (Optional) Unix Domain Socket 경로 (String). (설정 시 `url`의 호스트 부분은 무시됨. 예: `/var/run/docker.sock`)
+- **socketPath**: (Optional) Unix Domain Socket 경로 (String). (설정 시 `url`의 호스트 부분은 무시됨. 예: `/var/run/docker.sock` 또는 Windows Named Pipe `\\.\pipe\name`)
 - **localAddress**: (Optional) 요청을 보낼 로컬 네트워크 인터페이스의 IP 주소 (String). (IP Rotation, Multi-homed 서버 등에서 사용)
 - **proxy**: (Optional) 프록시 서버 설정 (String | Object).
     - **String**: `http://user:pass@proxy.com:8080`
@@ -114,6 +118,7 @@
     - `'json'`: 강제로 JSON 파싱 시도. (파싱 실패 시 `'EPARSE'` 예외 발생)
     - `'text'`: 강제로 텍스트로 반환.
     - `'bytes'`: Binary Data (Buffer/Bytes)로 반환.
+    - `'arraybuffer'`: `'bytes'`와 동일 (Browser 호환성).
     - `'stream'`: 스트림(Stream) 객체로 반환. (대용량 파일 처리 시 필수)
     - `'blob'`: **Blob** 객체로 반환. (브라우저 환경 등 Blob API 지원 시)
     - `'document'`: **HTML Document** 객체로 반환. (브라우저 환경 등 DOM Parser 지원 시)
@@ -159,6 +164,8 @@
         - `false` 반환: 재시도 중단.
         - `Config` 객체 반환: 해당 설정으로 재시도 수행 (프록시 교체 등).
     - `beforeRedirect`: `(options, response) => void | Promise<void>` (리다이렉트 직전 실행. 헤더 수정 등에 사용)
+- **trace**: (Optional) 상세 디버깅을 위한 이벤트 콜백 함수. `(event, info) => void`
+    - Events: `'lookup'`, `'connect'`, `'socket'`, `'upload'`, `'download'`, `'end'` 등.
 - **native**: (Optional) 언어/플랫폼별 전용 옵션 객체. (표준 옵션으로 커버되지 않는 기능 사용 시)
     - 예: `{ fetch: { mode: 'no-cors', keepalive: true }, node: { insecureHTTPParser: true }, py: { stream: true } }`
 
