@@ -14,6 +14,7 @@
 
 - **baseUrl**: (Optional) 기본 URL (String).
     - `url`이 상대 경로일 경우, `baseUrl`과 결합됩니다.
+    - **Slash Handling**: `baseUrl`이 `/`로 끝나고 `url`이 `/`로 시작하는 경우, 슬래시 하나가 제거되어 결합됩니다. (예: `host/` + `/path` -> `host/path`)
     - `url`이 절대 경로(`http://...`)일 경우, `baseUrl`은 무시됩니다.
 - **url**: 대상 주소 (String). (Path Parameter가 포함된 경우 `{key}` 또는 `:key` 형식 사용 권장)
 - **path**: (Optional) URL Path Parameter 치환 객체 (Object/Dict).
@@ -33,6 +34,7 @@
     - `'index'`: `key[0]=v1&key[1]=v2`
 - **paramsSerializer**: (Optional) Query Parameter를 문자열로 변환하는 커스텀 함수. `(params) => string`
     - 이 값이 설정되면 `paramsArrayFormat`은 무시됩니다.
+    - 반환값은 맨 앞의 `?`를 포함하지 않아야 합니다.
 - **cookies**: (Optional) 요청과 함께 전송할 쿠키 객체 (Object/Dict).
     - `headers`의 `Cookie` 값과 병합됩니다.
 - **data**: (Optional) Request Body (Object/Dict, String, Byte Array, Stream).
@@ -70,6 +72,8 @@
 - **maxRedirects**: (Optional) 리다이렉트 최대 허용 횟수 (Number, 기본값: 10). (`redirect: 'follow'`일 때만 적용. 브라우저 환경에서는 보안 정책에 따라 무시되거나 제한될 수 있음)
 - **retry**: (Optional) 실패 시 재시도 횟수 (Number, 기본값: 0).
     - 네트워크 오류, 5xx 서버 오류, **429(Too Many Requests)** 응답 시 재시도합니다.
+- **retryMethods**: (Optional) 재시도를 허용할 HTTP 메서드 배열 (String[], 기본값: `['GET', 'PUT', 'HEAD', 'DELETE', 'OPTIONS', 'TRACE']`).
+    - **POST, PATCH** 등 비멱등(Non-idempotent) 메서드는 기본적으로 재시도하지 않습니다. (중복 처리 방지)
 - **retryDelay**: (Optional) 재시도 간 대기 시간 (Number, ms 단위, 기본값: 0).
 - **socketPath**: (Optional) Unix Domain Socket 경로 (String). (설정 시 `url`의 호스트 부분은 무시됨. 예: `/var/run/docker.sock`)
 - **localAddress**: (Optional) 요청을 보낼 로컬 네트워크 인터페이스의 IP 주소 (String). (IP Rotation, Multi-homed 서버 등에서 사용)
@@ -130,7 +134,7 @@
     - `beforeRequest`: `(config) => config | Promise<config>` (요청 전송 전 실행)
     - `afterResponse`: `(response) => response | Promise<response>` (응답 수신 후 실행)
     - `beforeError`: `(error) => error | Promise<error>` (에러 발생 시 실행)
-    - `beforeRetry`: `(error, retryCount) => void` (재시도 직전 실행)
+    - `beforeRetry`: `(error, retryCount) => void | boolean | Promise<void | boolean>` (재시도 직전 실행. `false` 반환 시 재시도 중단)
 - **native**: (Optional) 언어/플랫폼별 전용 옵션 객체. (표준 옵션으로 커버되지 않는 기능 사용 시)
     - 예: `{ fetch: { mode: 'no-cors', keepalive: true }, node: { insecureHTTPParser: true }, py: { stream: true } }`
 
@@ -169,6 +173,12 @@
     - `'EPARSE'`: 응답 데이터 파싱 실패 (`responseType: 'json'` 등).
     - `'EMAXSIZE'`: 응답 본문 크기 제한 초과.
     - `'EMAXREDIRECTS'`: 리다이렉트 횟수 초과.
+- **에러 객체 구조 (Error Object Structure)**:
+    - `code`: 표준 에러 코드 (String).
+    - `message`: 에러 메시지 (String).
+    - `response`: (Optional) 응답 객체. (응답을 받았으나 에러인 경우, 또는 파싱 에러 시 포함)
+        - `status`, `headers`, `body` (Raw Data) 등을 포함해야 합니다.
+    - `config`: 요청 설정 객체.
 
 ## 4. 타입 지원 (Type Support - 권장사항)
 
