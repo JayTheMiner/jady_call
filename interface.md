@@ -51,6 +51,10 @@
 - **headers**: (Optional) HTTP 헤더 (Object/Dict).
     - **보안**: Header Value에 줄바꿈 문자(`\n`, `\r`)가 포함된 경우, **예외(Exception)**를 발생시켜야 합니다. (HTTP Response Splitting 방지)
 - **timeout**: (Optional) 요청 타임아웃 (Number, ms 단위, 기본값: 5000 등 언어별 적절한 값). **(시간 초과 시 예외 발생, 0 설정 시 무제한)**
+    - **Object**: 세부 타임아웃 설정 가능 (지원하는 플랫폼에 한함).
+        - `connect`: 소켓 연결 대기 시간.
+        - `read`: 데이터 수신 대기 시간 (Socket Timeout).
+        - `total`: 전체 요청 제한 시간 (기본 `timeout`과 동일).
 - **maxContentLength**: (Optional) 요청 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
 - **maxBodyLength**: (Optional) 응답 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
 - **auth**: (Optional) 인증 정보 객체.
@@ -90,6 +94,7 @@
     - `'bytes'`: Binary Data (Buffer/Bytes)로 반환.
     - `'stream'`: 스트림(Stream) 객체로 반환. (대용량 파일 처리 시 필수)
     - `'blob'`: **Blob** 객체로 반환. (브라우저 환경 등 Blob API 지원 시)
+    - `'document'`: **HTML Document** 객체로 반환. (브라우저 환경 등 DOM Parser 지원 시)
 - **responseEncoding**: (Optional) 응답 텍스트 디코딩 시 사용할 인코딩 (String, 기본값: `'utf-8'`).
     - `responseType`이 `'text'`이거나 `'auto'`(텍스트로 판별됨)일 때 적용됩니다.
     - 예: `'euc-kr'`, `'windows-1252'`
@@ -121,6 +126,13 @@
     - `progressEvent`: `{ loaded: number, total?: number }`
 - **meta**: (Optional) 사용자 정의 메타데이터 (Object/Dict).
     - 서버로 전송되지 않으며, 응답 객체나 에러 객체에 그대로 전달되어 로깅이나 후처리에 사용됩니다.
+- **hooks**: (Optional) 요청 라이프사이클 훅 (Object).
+    - `beforeRequest`: `(config) => config | Promise<config>` (요청 전송 전 실행)
+    - `afterResponse`: `(response) => response | Promise<response>` (응답 수신 후 실행)
+    - `beforeError`: `(error) => error | Promise<error>` (에러 발생 시 실행)
+    - `beforeRetry`: `(error, retryCount) => void` (재시도 직전 실행)
+- **native**: (Optional) 언어/플랫폼별 전용 옵션 객체. (표준 옵션으로 커버되지 않는 기능 사용 시)
+    - 예: `{ fetch: { mode: 'no-cors', keepalive: true }, node: { insecureHTTPParser: true }, py: { stream: true } }`
 
 ## 2. 표준 응답 구조 (The Output)
 
