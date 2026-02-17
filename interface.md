@@ -57,12 +57,14 @@
     - **Object**: 세부 타임아웃 설정 가능 (지원하는 플랫폼에 한함).
         - `connect`: 소켓 연결 대기 시간.
         - `read`: 데이터 수신 대기 시간 (Socket Idle Timeout).
-        - `total`: 전체 요청 제한 시간 (기본 `timeout`과 동일).
+        - `total`: 전체 요청 제한 시간 (재시도 포함). **(이 값이 설정되면 `timeout`은 각 시도별 제한 시간으로 동작)**
 - **maxHeaderSize**: (Optional) 응답 헤더의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 플랫폼별 기본값 또는 16KB)
 - **maxContentLength**: (Optional) 요청 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
 - **maxBodyLength**: (Optional) 응답 본문의 최대 크기 제한 (Number, bytes 단위). 초과 시 예외 발생. (기본값: 무제한)
     - `Content-Length` 헤더가 존재하면 이를 기준으로 미리 검사하고, 없으면 수신된 바이트 수를 기준으로 검사합니다.
 - **maxRate**: (Optional) 다운로드 대역폭 제한 (Number, bytes/sec). (지원하는 플랫폼에 한함)
+- **saveRawBody**: (Optional) `true` 설정 시, 파싱된 `body` 외에 원본 텍스트/버퍼를 `rawBody` 필드로 응답 객체에 포함합니다. (HMAC 검증 등에 사용)
+- **requestId**: (Optional) 요청 식별자 (String). (설정하지 않으면 UUID 등을 자동 생성하여 할당 권장)
 - **auth**: (Optional) 인증 정보 객체.
     - Basic Auth: `{ username: 'user', password: 'pw' }`
     - Bearer Token: `{ bearer: 'token_string' }` (헤더에 `Authorization: Bearer ...` 자동 추가)
@@ -86,8 +88,9 @@
 - **localAddress**: (Optional) 요청을 보낼 로컬 네트워크 인터페이스의 IP 주소 (String). (IP Rotation, Multi-homed 서버 등에서 사용)
 - **proxy**: (Optional) 프록시 서버 설정 (String | Object).
     - **String**: `http://user:pass@proxy.com:8080`
-    - **Object**: `{ host: string, port: number, protocol?: string, auth?: { username: string, password: string }, headers?: Object }`
+    - **Object**: `{ host: string, port: number, protocol?: string, auth?: { username: string, password: string }, headers?: Object, noProxy?: String[] }`
         - `headers`: 프록시 서버로 보낼 커스텀 헤더 (예: `Proxy-Authorization` 수동 설정 등).
+        - `noProxy`: 프록시를 거치지 않을 도메인 목록 (예: `['localhost', '.internal']`).
     - 주의: 브라우저 환경에서는 보안 정책상 무시될 수 있습니다.
 - **agent**: (Optional) HTTP 연결 풀링(Connection Pooling)을 위한 플랫폼별 에이전트 객체.
     - Node.js: `http.Agent` / `https.Agent` 또는 `{ http: Agent, https: Agent }` (프로토콜별 분리)
@@ -104,6 +107,8 @@
     - `passphrase`: 개인키 비밀번호 (String).
     - `ciphers`: 사용할 암호화 제품군 목록 (String).
     - `servername`: SNI(Server Name Indication) 오버라이드 (String).
+    - `minVersion`: TLS 최소 버전 (String). (예: `'TLSv1.2'`)
+    - `maxVersion`: TLS 최대 버전 (String). (예: `'TLSv1.3'`)
 - **responseType**: (Optional) 응답 데이터의 타입 지정 (String, 기본값: `'auto'`).
     - `'auto'`: `Content-Type`에 따라 JSON, Text, Binary 자동 처리.
     - `'json'`: 강제로 JSON 파싱 시도. (파싱 실패 시 `'EPARSE'` 예외 발생)
@@ -150,7 +155,9 @@
     - `beforeRequest`: `(config) => config | Promise<config>` (요청 전송 전 실행)
     - `afterResponse`: `(response) => response | Promise<response>` (응답 수신 후 실행)
     - `beforeError`: `(error) => error | Promise<error>` (에러 발생 시 실행)
-    - `beforeRetry`: `(error, retryCount) => void | boolean | Promise<void | boolean>` (재시도 직전 실행. `false` 반환 시 재시도 중단)
+    - `beforeRetry`: `(error, retryCount) => void | boolean | Config | Promise<...>` (재시도 직전 실행)
+        - `false` 반환: 재시도 중단.
+        - `Config` 객체 반환: 해당 설정으로 재시도 수행 (프록시 교체 등).
     - `beforeRedirect`: `(options, response) => void | Promise<void>` (리다이렉트 직전 실행. 헤더 수정 등에 사용)
 - **native**: (Optional) 언어/플랫폼별 전용 옵션 객체. (표준 옵션으로 커버되지 않는 기능 사용 시)
     - 예: `{ fetch: { mode: 'no-cors', keepalive: true }, node: { insecureHTTPParser: true }, py: { stream: true } }`
@@ -175,6 +182,7 @@
 - **config**: 요청 시 사용된 설정 객체 (Object). (`meta` 포함)
 - **body**: 실제 응답 데이터.
     - `responseType` 설정이 최우선으로 적용됩니다.
+    - **rawBody**: (Optional) `saveRawBody: true`일 때 포함되는 원본 데이터 (String | Buffer).
     - **HEAD 요청**: `body`는 항상 **`null`**입니다.
     - **자동 압축 해제(Decompression)**: `decompress: true`(기본값)일 경우, Gzip, Deflate, Brotli 등으로 압축된 응답은 자동으로 해제된 후 처리됩니다.
     - JSON 응답 (`application/json`): **Object/Dict**로 자동 파싱. **(파싱 실패 시 Raw String 반환)**
