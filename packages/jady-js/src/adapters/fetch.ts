@@ -109,7 +109,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
     } else if (config.responseType === 'blob') {
       responseBody = await response.blob();
     } else if (config.responseType === 'arraybuffer' || config.responseType === 'bytes') {
-      responseBody = await response.arraybuffer();
+      responseBody = await response.arrayBuffer();
     } else {
       // Auto
       if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
@@ -117,7 +117,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       } else if (contentType && (contentType.includes('text/') || contentType.includes('xml'))) {
         responseBody = await response.text();
       } else {
-        responseBody = await response.arraybuffer();
+        responseBody = await response.arrayBuffer();
       }
     }
 

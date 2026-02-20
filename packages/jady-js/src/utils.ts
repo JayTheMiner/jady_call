@@ -95,6 +95,10 @@ export function buildURL(url: string, params?: any, paramsSerializer?: (params: 
 
   if (paramsSerializer) {
     serializedParams = paramsSerializer(params);
+    // Remove leading '?' if present
+    if (serializedParams && serializedParams.startsWith('?')) {
+      serializedParams = serializedParams.slice(1);
+    }
   } else if (typeof URLSearchParams !== 'undefined' && params instanceof URLSearchParams) {
     serializedParams = params.toString();
   } else {
@@ -108,15 +112,29 @@ export function buildURL(url: string, params?: any, paramsSerializer?: (params: 
 
       if (Array.isArray(val)) {
         const format = paramsArrayFormat || 'repeat';
+        
+        // Filter null/undefined
+        const validValues = val.filter((v: any) => v !== null && typeof v !== 'undefined');
+        if (validValues.length === 0) return;
+
         if (format === 'comma') {
-          val = [val.join(',')];
+          const stringifiedValues = validValues.map((v: any) => {
+             if (isDate(v)) return v.toISOString();
+             if (isObject(v)) throw new Error(`Nested object in params is not supported: ${key}`);
+             return String(v);
+          });
+          parts.push(`${encode(key)}=${encode(stringifiedValues.join(','))}`);
+          return;
         }
         
-        val.forEach((v: any, i: number) => {
-          if (v === null || typeof v === 'undefined') return;
+        let indexCounter = 0;
+        validValues.forEach((v: any) => {
           let currentKey = key;
           if (format === 'brackets') currentKey = `${key}[]`;
-          else if (format === 'index') currentKey = `${key}[${i}]`;
+          else if (format === 'index') {
+            currentKey = `${key}[${indexCounter}]`;
+            indexCounter++;
+          }
           
           if (isDate(v)) {
             v = v.toISOString();
@@ -142,10 +160,12 @@ export function buildURL(url: string, params?: any, paramsSerializer?: (params: 
 
   if (serializedParams) {
     const hashmarkIndex = url.indexOf('#');
+    let hash = '';
     if (hashmarkIndex !== -1) {
+      hash = url.slice(hashmarkIndex);
       url = url.slice(0, hashmarkIndex);
     }
-    url += (url.indexOf('?') === -1 ? '?' : '&') + serializedParams;
+    url += (url.indexOf('?') === -1 ? '?' : '&') + serializedParams + hash;
   }
 
   return url;
