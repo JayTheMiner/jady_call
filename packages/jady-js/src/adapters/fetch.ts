@@ -98,26 +98,56 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
 
     // 4. Response Processing
     let responseBody: any;
-    const contentType = response.headers.get('content-type');
+    let rawResponse = response;
+
+    // Handle Download Progress
+    if (config.onDownloadProgress && response.body) {
+      const total = Number(response.headers.get('content-length')) || undefined;
+      let loaded = 0;
+      const reader = response.body.getReader();
+      const stream = new ReadableStream({
+        async start(controller) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+              break;
+            }
+            loaded += value.byteLength;
+            config.onDownloadProgress!({ loaded, total });
+            controller.enqueue(value);
+          }
+        }
+      });
+      
+      // Create a new Response with the monitored stream to allow .json(), .text() etc. to work
+      rawResponse = new Response(stream, {
+        headers: response.headers,
+        status: response.status,
+        statusText: response.statusText
+      });
+    }
+
+    const contentType = rawResponse.headers.get('content-type');
 
     if (config.responseType === 'stream') {
-      responseBody = response.body;
+      responseBody = rawResponse.body;
     } else if (config.responseType === 'json') {
-      responseBody = await response.json();
+      responseBody = await rawResponse.json();
     } else if (config.responseType === 'text') {
-      responseBody = await response.text();
+      responseBody = await rawResponse.text();
     } else if (config.responseType === 'blob') {
-      responseBody = await response.blob();
+      responseBody = await rawResponse.blob();
     } else if (config.responseType === 'arraybuffer' || config.responseType === 'bytes') {
-      responseBody = await response.arrayBuffer();
+      responseBody = await rawResponse.arrayBuffer();
     } else {
       // Auto
       if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
-        responseBody = await response.json();
+        responseBody = await rawResponse.json();
       } else if (contentType && (contentType.includes('text/') || contentType.includes('xml'))) {
-        responseBody = await response.text();
+        responseBody = await rawResponse.text();
       } else {
-        responseBody = await response.arrayBuffer();
+        responseBody = await rawResponse.arrayBuffer();
       }
     }
 

@@ -50,6 +50,7 @@ function getRetryDelay(config: JadyConfig, retryCount: number, error: any, respo
 export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyResponse> {
   // 1. Merge with defaults
   let config = mergeConfig(defaults, userConfig) as JadyConfig;
+  const startTime = Date.now();
 
   // Process Headers (Normalize & Validate)
   config.headers = processHeaders(config.headers);
@@ -83,6 +84,13 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
   let error: any;
 
   while (true) {
+    // Check Total Timeout
+    if (config.totalTimeout && config.totalTimeout > 0) {
+      if (Date.now() - startTime > config.totalTimeout) {
+        throw createError('Total timeout exceeded', JadyErrorCodes.ETIMEDOUT, config);
+      }
+    }
+
     try {
       // 5. Adapter Execution
       if (!config.adapter) {
@@ -138,6 +146,11 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
       
       if (isRetryStatus && retryCount < (config.retry || 0)) {
         const delay = getRetryDelay(config, retryCount + 1, null, response);
+
+        // Check if waiting would exceed totalTimeout
+        if (config.totalTimeout && config.totalTimeout > 0 && (Date.now() - startTime + delay > config.totalTimeout)) {
+           throw createError('Total timeout exceeded during retry delay', JadyErrorCodes.ETIMEDOUT, config, response);
+        }
         
         if (config.hooks?.beforeRetry) {
            const hookResult = await config.hooks.beforeRetry(createError(`Request failed with status ${response.status}`, JadyErrorCodes.ENETWORK, config, response), retryCount + 1);
@@ -167,6 +180,11 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
 
         if (shouldRetry) {
           const delay = getRetryDelay(config, retryCount + 1, error);
+
+          // Check if waiting would exceed totalTimeout
+          if (config.totalTimeout && config.totalTimeout > 0 && (Date.now() - startTime + delay > config.totalTimeout)) {
+             throw createError('Total timeout exceeded during retry delay', JadyErrorCodes.ETIMEDOUT, config, undefined, error);
+          }
           
           if (config.hooks?.beforeRetry) {
             const hookResult = await config.hooks.beforeRetry(error, retryCount + 1);
