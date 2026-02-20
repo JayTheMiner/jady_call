@@ -206,6 +206,7 @@ export interface JadyError extends Error {
   config: JadyConfig;
   response?: JadyResponse;
   timings?: JadyTimings;
+  cause?: any;
 }
 
 /**
