@@ -182,3 +182,32 @@ export function createError(message: string, code: string, config: JadyConfig, r
   }
   return error;
 }
+
+/**
+ * Normalizes and validates headers.
+ * - Keys are normalized to lowercase.
+ * - Null/Undefined values are removed.
+ * - Validates against invalid characters.
+ */
+export function processHeaders(headers: any): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  if (!headers || typeof headers !== 'object') return normalized;
+
+  Object.keys(headers).forEach(key => {
+    if (!key) return;
+    // Basic validation for header name
+    if (/[^a-zA-Z0-9\-!#$%&'*+.^_`|~]/.test(key)) {
+      throw new Error(`Invalid header name: "${key}"`);
+    }
+
+    const value = headers[key];
+    if (value === null || typeof value === 'undefined') return;
+
+    const strValue = String(value);
+    if (/[\r\n]/.test(strValue)) throw new Error(`Invalid header value for "${key}"`);
+
+    normalized[key.toLowerCase()] = strValue;
+  });
+
+  return normalized;
+}

@@ -1,5 +1,5 @@
 import { JadyConfig, JadyResponse, JadyError, JadyErrorCodes } from './types';
-import { buildFullPath, mergeConfig, isAbsoluteURL, combineURLs, substitutePath, buildURL, createError } from './utils';
+import { buildFullPath, mergeConfig, isAbsoluteURL, combineURLs, substitutePath, buildURL, createError, processHeaders } from './utils';
 import fetchAdapter from './adapters/fetch';
 
 /**
@@ -50,6 +50,9 @@ function getRetryDelay(config: JadyConfig, retryCount: number, error: any, respo
 export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyResponse> {
   // 1. Merge with defaults
   let config = mergeConfig(defaults, userConfig) as JadyConfig;
+
+  // Process Headers (Normalize & Validate)
+  config.headers = processHeaders(config.headers);
 
   // 2. URL Handling
   if (config.baseUrl && !isAbsoluteURL(config.url)) {
