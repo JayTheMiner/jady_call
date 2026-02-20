@@ -1,0 +1,148 @@
+import { JadyConfig, JadyResponse, JadyErrorCodes } from '../types';
+import { createError } from '../utils';
+
+export default async function fetchAdapter(config: JadyConfig): Promise<JadyResponse> {
+  const headers = { ...(config.headers || {}) } as Record<string, string>;
+
+  // 1. Auth Handling
+  if (config.auth) {
+    const { username, password, bearer } = config.auth as any;
+    // Only add if not already present (case-insensitive check needed in real impl, simplified here)
+    if (!headers['Authorization'] && !headers['authorization']) {
+      if (username !== undefined) {
+        // Basic Auth
+        const encoded = typeof btoa !== 'undefined' 
+          ? btoa(unescape(encodeURIComponent(`${username}:${password || ''}`)))
+          : Buffer.from(`${username}:${password || ''}`).toString('base64');
+        headers['Authorization'] = `Basic ${encoded}`;
+      } else if (bearer) {
+        // Bearer Auth
+        headers['Authorization'] = `Bearer ${bearer}`;
+      }
+    }
+  }
+
+  // 2. Body & Files Handling
+  let body: any = config.data;
+
+  if (config.files) {
+    const formData = new FormData();
+    
+    // Append data fields
+    if (config.data && typeof config.data === 'object') {
+      Object.keys(config.data).forEach(key => {
+        const value = config.data[key];
+        if (value === null || value === undefined) return;
+        if (Array.isArray(value)) {
+          value.forEach(v => formData.append(key, String(v)));
+        } else {
+          formData.append(key, String(value));
+        }
+      });
+    }
+
+    // Append files
+    Object.keys(config.files).forEach(key => {
+      const fileOrFiles = config.files![key];
+      const files = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+      
+      files.forEach((file: any) => {
+        if (file === null || file === undefined) return;
+        if (file.file) {
+          formData.append(key, file.file, file.filename);
+        } else {
+          formData.append(key, file);
+        }
+      });
+    });
+
+    body = formData;
+    // Remove Content-Type to let browser set boundary
+    delete headers['Content-Type'];
+    delete headers['content-type'];
+  } else if (body && typeof body === 'object' && 
+             !(typeof FormData !== 'undefined' && body instanceof FormData) &&
+             !(typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) &&
+             !(typeof Blob !== 'undefined' && body instanceof Blob) &&
+             !(typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer)) {
+    body = JSON.stringify(body);
+    if (!headers['Content-Type'] && !headers['content-type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+  }
+
+  // 3. Timeout Handling
+  const controller = new AbortController();
+  const signal = config.signal ? config.signal : controller.signal; // Merge signals if needed
+  let timeoutId: any;
+
+  if (config.timeout && config.timeout > 0) {
+    timeoutId = setTimeout(() => controller.abort(), config.timeout);
+  }
+
+  try {
+    const startTime = Date.now();
+    const response = await fetch(config.url, {
+      method: config.method,
+      headers,
+      body,
+      signal,
+      // mode: 'cors', // Default
+      // credentials: config.withCredentials ? 'include' : 'same-origin',
+    });
+    
+    if (timeoutId) clearTimeout(timeoutId);
+
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+
+    // 4. Response Processing
+    let responseBody: any;
+    const contentType = response.headers.get('content-type');
+
+    if (config.responseType === 'stream') {
+      responseBody = response.body;
+    } else if (config.responseType === 'json') {
+      responseBody = await response.json();
+    } else if (config.responseType === 'text') {
+      responseBody = await response.text();
+    } else if (config.responseType === 'blob') {
+      responseBody = await response.blob();
+    } else if (config.responseType === 'arraybuffer' || config.responseType === 'bytes') {
+      responseBody = await response.arraybuffer();
+    } else {
+      // Auto
+      if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
+        responseBody = await response.json();
+      } else if (contentType && (contentType.includes('text/') || contentType.includes('xml'))) {
+        responseBody = await response.text();
+      } else {
+        responseBody = await response.arraybuffer();
+      }
+    }
+
+    const responseHeaders: Record<string, string | string[]> = {};
+    response.headers.forEach((val, key) => {
+      responseHeaders[key] = val;
+    });
+
+    return {
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders,
+      body: responseBody,
+      config,
+      duration,
+      totalDuration: duration, // Will be updated by cors.ts
+      url: response.url,
+      ok: response.ok,
+      attempts: []
+    };
+  } catch (error: any) {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw createError('Request timed out', JadyErrorCodes.ETIMEDOUT, config, undefined, error);
+    }
+    throw createError(error.message, JadyErrorCodes.ENETWORK, config, undefined, error);
+  }
+}

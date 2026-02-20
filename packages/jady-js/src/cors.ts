@@ -1,5 +1,6 @@
 import { JadyConfig, JadyResponse, JadyError, JadyErrorCodes } from './types';
-import { buildFullPath, mergeConfig, isAbsoluteURL, combineURLs } from './utils';
+import { buildFullPath, mergeConfig, isAbsoluteURL, combineURLs, substitutePath, buildURL, createError } from './utils';
+import fetchAdapter from './adapters/fetch';
 
 /**
  * Default configuration for jady.call
@@ -20,20 +21,9 @@ const defaults: Partial<JadyConfig> = {
   validateStatus: (status: number) => status >= 200 && status < 300,
   headers: {
     'Accept': 'application/json, text/plain, */*'
-  }
+  },
+  adapter: fetchAdapter
 };
-
-function createError(message: string, code: string, config: JadyConfig, response?: JadyResponse, originalError?: any): JadyError {
-  const error = new Error(message) as JadyError;
-  error.code = code;
-  error.config = config;
-  error.response = response;
-  if (originalError) {
-    error.stack = originalError.stack;
-    error.cause = originalError;
-  }
-  return error;
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -62,9 +52,17 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
   let config = mergeConfig(defaults, userConfig) as JadyConfig;
 
   // 2. URL Handling
-  if (config.baseUrl && !config.url.startsWith('http')) {
+  if (config.baseUrl && !isAbsoluteURL(config.url)) {
     config.url = buildFullPath(config.baseUrl, config.url);
   }
+
+  // Path Params Substitution
+  if (config.path) {
+    config.url = substitutePath(config.url, config.path);
+  }
+
+  // Query Params Serialization
+  config.url = buildURL(config.url, config.params, config.paramsSerializer, config.paramsArrayFormat);
 
   // 3. Validation (Fail Fast)
   if (!config.url) {
