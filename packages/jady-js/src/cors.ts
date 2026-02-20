@@ -1,5 +1,5 @@
 import { JadyConfig, JadyResponse, JadyError, JadyErrorCodes } from './types';
-import { buildFullPath, mergeConfig, isAbsoluteURL, combineURLs, substitutePath, buildURL, createError, processHeaders } from './utils';
+import { buildFullPath, mergeConfig, isAbsoluteURL, combineURLs, substitutePath, buildURL, createError, processHeaders, parseCookie } from './utils';
 import fetchAdapter from './adapters/fetch';
 
 /**
@@ -25,8 +25,25 @@ const defaults: Partial<JadyConfig> = {
   adapter: fetchAdapter
 };
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function sleep(ms: number, config: JadyConfig): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const signal = config.signal;
+    if (signal?.aborted) {
+      return reject(createError('Canceled', JadyErrorCodes.ECANCELED, config));
+    }
+
+    const timer = setTimeout(() => {
+      resolve();
+      signal?.removeEventListener('abort', onAbort);
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(createError('Canceled', JadyErrorCodes.ECANCELED, config));
+    };
+
+    signal?.addEventListener('abort', onAbort);
+  });
 }
 
 function isRetryableError(error: any): boolean {
@@ -54,6 +71,14 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
 
   // Process Headers (Normalize & Validate)
   config.headers = processHeaders(config.headers);
+
+  // XSRF Handling (Browser only)
+  if (typeof document !== 'undefined' && config.xsrfCookieName && config.xsrfHeaderName) {
+    const xsrfValue = parseCookie(document.cookie, config.xsrfCookieName);
+    if (xsrfValue && !config.headers[config.xsrfHeaderName.toLowerCase()]) {
+      config.headers[config.xsrfHeaderName.toLowerCase()] = xsrfValue;
+    }
+  }
 
   // 2. URL Handling
   if (config.baseUrl && !isAbsoluteURL(config.url)) {
@@ -158,7 +183,7 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
            if (typeof hookResult === 'object') config = hookResult as JadyConfig;
         }
 
-        await sleep(delay);
+        await sleep(delay, config);
         retryCount++;
         continue;
       }
@@ -192,7 +217,7 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
             if (typeof hookResult === 'object') config = hookResult as JadyConfig;
           }
 
-          await sleep(delay);
+          await sleep(delay, config);
           retryCount++;
           continue;
         }

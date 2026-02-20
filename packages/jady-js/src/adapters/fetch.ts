@@ -98,6 +98,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
 
     // 4. Response Processing
     let responseBody: any;
+    let rawBody: string | undefined;
     let rawResponse = response;
 
     // Handle Download Progress
@@ -130,24 +131,43 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
 
     const contentType = rawResponse.headers.get('content-type');
 
-    if (config.responseType === 'stream') {
-      responseBody = rawResponse.body;
-    } else if (config.responseType === 'json') {
-      responseBody = await rawResponse.json();
-    } else if (config.responseType === 'text') {
-      responseBody = await rawResponse.text();
-    } else if (config.responseType === 'blob') {
-      responseBody = await rawResponse.blob();
-    } else if (config.responseType === 'arraybuffer' || config.responseType === 'bytes') {
-      responseBody = await rawResponse.arrayBuffer();
-    } else {
-      // Auto
-      if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
-        responseBody = await rawResponse.json();
-      } else if (contentType && (contentType.includes('text/') || contentType.includes('xml'))) {
-        responseBody = await rawResponse.text();
+    // Handle saveRawBody
+    if (config.saveRawBody && config.responseType !== 'stream' && config.responseType !== 'blob' && config.responseType !== 'arraybuffer' && config.responseType !== 'bytes') {
+      const text = await rawResponse.text();
+      rawBody = text;
+
+      if (config.responseType === 'json') {
+        responseBody = JSON.parse(text);
+      } else if (config.responseType === 'text') {
+        responseBody = text;
       } else {
+        // Auto
+        if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
+          responseBody = JSON.parse(text);
+        } else {
+          responseBody = text;
+        }
+      }
+    } else {
+      if (config.responseType === 'stream') {
+        responseBody = rawResponse.body;
+      } else if (config.responseType === 'json') {
+        responseBody = await rawResponse.json();
+      } else if (config.responseType === 'text') {
+        responseBody = await rawResponse.text();
+      } else if (config.responseType === 'blob') {
+        responseBody = await rawResponse.blob();
+      } else if (config.responseType === 'arraybuffer' || config.responseType === 'bytes') {
         responseBody = await rawResponse.arrayBuffer();
+      } else {
+        // Auto
+        if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
+          responseBody = await rawResponse.json();
+        } else if (contentType && (contentType.includes('text/') || contentType.includes('xml'))) {
+          responseBody = await rawResponse.text();
+        } else {
+          responseBody = await rawResponse.arrayBuffer();
+        }
       }
     }
 
@@ -161,6 +181,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       statusText: response.statusText,
       headers: responseHeaders,
       body: responseBody,
+      rawBody,
       config,
       duration,
       totalDuration: duration, // Will be updated by cors.ts

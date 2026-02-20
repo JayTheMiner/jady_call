@@ -211,3 +211,9 @@ export function processHeaders(headers: any): Record<string, string> {
 
   return normalized;
 }
+
+export function parseCookie(cookieString: string, name: string): string | null {
+  if (!cookieString) return null;
+  const match = cookieString.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+  return match ? decodeURIComponent(match[3]) : null;
+}
