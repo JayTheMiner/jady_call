@@ -1,0 +1,24 @@
+{
+  "name": "jady-js",
+  "version": "0.1.0",
+  "description": "Standardized HTTP Client Interface for Polyglot Environments (JavaScript/TypeScript Implementation)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "http",
+    "client",
+    "jady",
+    "standard",
+    "interface"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^18.0.0"
+  }
+}
