@@ -24,8 +24,15 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
 
   // 2. Body & Files Handling
   let body: any = config.data;
+  const isBodyAllowed = !config.method || !['GET', 'HEAD'].includes(config.method.toUpperCase());
 
-  if (config.files) {
+  if (!isBodyAllowed) {
+    body = undefined;
+  } else if (config.files) {
+    if (config.data && (typeof config.data !== 'object' || config.data.constructor !== Object)) {
+      throw createError('data must be a plain object when using files', JadyErrorCodes.ENETWORK, config);
+    }
+
     const formData = new FormData();
     
     // Append data fields
@@ -33,10 +40,15 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       Object.keys(config.data).forEach(key => {
         const value = config.data[key];
         if (value === null || value === undefined) return;
+        
+        const append = (v: any) => {
+          formData.append(key, v instanceof Date ? v.toISOString() : String(v));
+        };
+
         if (Array.isArray(value)) {
-          value.forEach(v => formData.append(key, String(v)));
+          value.forEach(v => append(v));
         } else {
-          formData.append(key, String(value));
+          append(value);
         }
       });
     }
@@ -124,7 +136,10 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
     let responseBody: any;
     let rawBody: string | undefined;
     let rawResponse = response;
-
+    
+    if (response.status === 204) {
+      responseBody = null;
+    } else {
     // Handle Download Progress
     if (config.onDownloadProgress && response.body) {
       const total = Number(response.headers.get('content-length')) || undefined;
@@ -222,6 +237,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
           responseBody = await rawResponse.arrayBuffer();
         }
       }
+    }
     }
 
     const responseHeaders: Record<string, string | string[]> = {};

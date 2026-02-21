@@ -1250,4 +1250,329 @@ describe('jady-js', () => {
 
     expect(response.body).toBe('ÿ');
   });
+
+  test('should throw error if url is missing', async () => {
+    // @ts-ignore
+    await expect(jady({})).rejects.toThrow('url is required');
+  });
+
+  test('should not mutate the original config object', async () => {
+    mockFetchResponse({});
+    const originalConfig = {
+      url: 'https://api.example.com/mutate',
+      headers: { 'X-Test': 'original' }
+    };
+    // Deep copy to compare later
+    const configCopy = JSON.parse(JSON.stringify(originalConfig));
+
+    await jady(originalConfig);
+
+    expect(originalConfig).toEqual(configCopy);
+  });
+
+  test('should throw error if both basic and bearer auth are provided', async () => {
+    await expect(jady({
+      url: 'https://api.example.com/auth-error',
+      auth: { username: 'user', bearer: 'token' } as any
+    })).rejects.toThrow('Cannot use both Basic and Bearer authentication');
+  });
+
+  test('should handle slash normalization in baseUrl', async () => {
+    mockFetchResponse({});
+
+    // Case 1: No slash
+    await jady({ baseUrl: 'https://api.example.com/v1', url: 'users' });
+    expect(global.fetch).toHaveBeenLastCalledWith('https://api.example.com/v1/users', expect.anything());
+
+    // Case 2: Both have slash
+    await jady({ baseUrl: 'https://api.example.com/v1/', url: '/users' });
+    expect(global.fetch).toHaveBeenLastCalledWith('https://api.example.com/v1/users', expect.anything());
+
+    // Case 3: Base has slash
+    await jady({ baseUrl: 'https://api.example.com/v1/', url: 'users' });
+    expect(global.fetch).toHaveBeenLastCalledWith('https://api.example.com/v1/users', expect.anything());
+
+    // Case 4: Url has slash
+    await jady({ baseUrl: 'https://api.example.com/v1', url: '/users' });
+    expect(global.fetch).toHaveBeenLastCalledWith('https://api.example.com/v1/users', expect.anything());
+  });
+
+  test('should encode special characters in path parameters', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/files/{path}/info',
+      path: { path: 'folder/file.txt' }
+    });
+    expect(global.fetch).toHaveBeenLastCalledWith('https://api.example.com/files/folder%2Ffile.txt/info', expect.anything());
+
+    await jady({
+      url: 'https://api.example.com/search/:query',
+      path: { query: 'hello world?' }
+    });
+    expect(global.fetch).toHaveBeenLastCalledWith('https://api.example.com/search/hello%20world%3F', expect.anything());
+  });
+
+  test('should ignore request body for GET and HEAD methods', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/get',
+      method: 'GET',
+      data: { some: 'data' }
+    });
+    expect(global.fetch).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      method: 'GET',
+      body: undefined
+    }));
+
+    await jady({
+      url: 'https://api.example.com/head',
+      method: 'HEAD',
+      data: { some: 'data' }
+    });
+    expect(global.fetch).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      method: 'HEAD',
+      body: undefined
+    }));
+  });
+
+  test('should throw error for circular references in JSON data', async () => {
+    const circular: any = { a: 1 };
+    circular.self = circular;
+
+    await expect(jady({
+      url: 'https://api.example.com/circular',
+      method: 'POST',
+      data: circular
+    })).rejects.toThrow(); // JSON.stringify throws TypeError
+  });
+
+  test('should convert boolean and date fields in multipart/form-data', async () => {
+    mockFetchResponse({});
+    const appendSpy = jest.spyOn(FormData.prototype, 'append');
+    const date = new Date('2023-01-01T00:00:00.000Z');
+
+    await jady({
+      url: 'https://api.example.com/upload',
+      method: 'POST',
+      data: { isTrue: true, isFalse: false, date },
+      files: { file: new Blob([]) }
+    });
+
+    expect(appendSpy).toHaveBeenCalledWith('isTrue', 'true');
+    expect(appendSpy).toHaveBeenCalledWith('isFalse', 'false');
+    expect(appendSpy).toHaveBeenCalledWith('date', date.toISOString());
+    appendSpy.mockRestore();
+  });
+
+  test('should throw error if data is not a plain object when using files', async () => {
+    await expect(jady({
+      url: 'https://api.example.com/error',
+      method: 'POST',
+      data: 'string data', // Not a plain object
+      files: { file: new Blob([]) }
+    })).rejects.toThrow('data must be a plain object when using files');
+  });
+
+  test('should throw error for invalid header names or values', async () => {
+    await expect(jady({
+      url: 'https://api.example.com',
+      headers: { 'Invalid Name': 'value' }
+    })).rejects.toThrow('Invalid header name');
+
+    await expect(jady({
+      url: 'https://api.example.com',
+      headers: { 'Valid-Name': 'Invalid\nValue' }
+    })).rejects.toThrow('Invalid header value');
+  });
+
+  test('should preserve method and body on 307/308 redirects', async () => {
+    const originalUrl = 'https://api.example.com/post';
+    const redirectUrl = 'https://api.example.com/temp-post';
+    const postData = { key: 'value' };
+
+    // 307 Temporary Redirect
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 307,
+        headers: new Headers({ 'Location': redirectUrl }),
+        arrayBuffer: async () => new ArrayBuffer(0)
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ success: true }),
+        text: async () => JSON.stringify({ success: true }),
+        arrayBuffer: async () => new ArrayBuffer(0)
+      });
+
+    await jady({
+      url: originalUrl,
+      method: 'POST',
+      data: postData
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const secondCall = (global.fetch as jest.Mock).mock.calls[1];
+    expect(secondCall[0]).toBe(redirectUrl);
+    expect(secondCall[1].method).toBe('POST');
+    expect(secondCall[1].body).toBe(JSON.stringify(postData));
+  });
+
+  test('should strip sensitive headers on cross-domain redirects', async () => {
+    const originalUrl = 'https://api.example.com/auth';
+    const crossDomainUrl = 'https://other.example.com/login';
+
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 302,
+        headers: new Headers({ 'Location': crossDomainUrl }),
+        arrayBuffer: async () => new ArrayBuffer(0)
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ success: true }),
+        text: async () => JSON.stringify({ success: true }),
+        arrayBuffer: async () => new ArrayBuffer(0)
+      });
+
+    await jady({
+      url: originalUrl,
+      headers: {
+        'Authorization': 'Bearer secret',
+        'Cookie': 'session=123',
+        'X-Public': 'public'
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const secondCall = (global.fetch as jest.Mock).mock.calls[1];
+    const headers = secondCall[1].headers;
+    
+    expect(headers).not.toHaveProperty('authorization');
+    expect(headers).not.toHaveProperty('cookie');
+    expect(headers).toHaveProperty('x-public', 'public');
+  });
+
+  test('should support dynamic retryDelay function', async () => {
+    jest.useFakeTimers();
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        headers: new Headers(),
+        arrayBuffer: async () => new ArrayBuffer(0)
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ success: true }),
+        text: async () => JSON.stringify({ success: true }),
+        arrayBuffer: async () => new ArrayBuffer(0)
+      });
+
+    const retryDelay = jest.fn((retryCount) => retryCount * 1000);
+
+    const promise = jady({
+      url: 'https://api.example.com/dynamic-retry',
+      retry: 1,
+      retryDelay
+    });
+
+    // Allow microtasks to process
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(retryDelay).toHaveBeenCalledWith(1, expect.anything());
+
+    // Advance time to trigger the retry
+    jest.advanceTimersByTime(1000);
+
+    await promise;
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    jest.useRealTimers();
+  });
+
+  test('should stop retrying if totalTimeout is exceeded during delay', async () => {
+    jest.useFakeTimers();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: new Headers(),
+      arrayBuffer: async () => new ArrayBuffer(0)
+    });
+
+    const promise = jady({
+      url: 'https://api.example.com/timeout-retry',
+      retry: 3,
+      retryDelay: 2000, // 2s delay
+      totalTimeout: 1000 // 1s total timeout
+    });
+
+    // Should fail immediately because 2000 > 1000
+    await expect(promise).rejects.toMatchObject({
+      code: 'ETIMEDOUT',
+      message: expect.stringContaining('Total timeout exceeded during retry delay')
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    
+    jest.useRealTimers();
+  });
+
+  test('should populate attempts array in response', async () => {
+    // First: 500 Error
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        headers: new Headers(),
+        arrayBuffer: async () => new ArrayBuffer(0)
+      })
+      // Second: 200 OK
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({}),
+        text: async () => '{}',
+        arrayBuffer: async () => new ArrayBuffer(0)
+      });
+
+    const response = await jady({
+      url: 'https://api.example.com/attempts',
+      retry: 1,
+      retryDelay: 1
+    });
+
+    expect(response.attempts).toHaveLength(2);
+    expect(response.attempts[0].error).toBeDefined(); // First attempt failed
+    expect(response.attempts[1].status).toBe(200);    // Second attempt succeeded
+  });
+
+  test('should return null body for 204 No Content', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      text: async () => '',
+      arrayBuffer: async () => new ArrayBuffer(0)
+    });
+
+    const response = await jady({
+      url: 'https://api.example.com/204'
+    });
+
+    expect(response.status).toBe(204);
+    expect(response.body).toBeNull();
+  });
 });

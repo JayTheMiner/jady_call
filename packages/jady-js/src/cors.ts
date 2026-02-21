@@ -1,4 +1,4 @@
-import { JadyConfig, JadyResponse, JadyError, JadyErrorCodes } from './types';
+import { JadyConfig, JadyResponse, JadyError, JadyErrorCodes, JadyAttempt } from './types';
 import { buildFullPath, mergeConfig, isAbsoluteURL, combineURLs, substitutePath, buildURL, createError, processHeaders, parseCookie } from './utils';
 import fetchAdapter from './adapters/fetch';
 
@@ -98,6 +98,13 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
     throw new Error('url is required');
   }
 
+  if (config.auth) {
+    const { username, bearer } = config.auth as any;
+    if (username !== undefined && bearer !== undefined) {
+      throw new Error('Cannot use both Basic and Bearer authentication');
+    }
+  }
+
   // 4. Hooks: beforeRequest
   if (config.hooks?.beforeRequest) {
     config = await config.hooks.beforeRequest(config);
@@ -107,8 +114,10 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
   let redirectCount = 0;
   let response: JadyResponse | undefined;
   let error: any;
+  const attempts: JadyAttempt[] = [];
 
   while (true) {
+    const attemptStartTime = Date.now();
     // Check Total Timeout
     if (config.totalTimeout && config.totalTimeout > 0) {
       if (Date.now() - startTime > config.totalTimeout) {
@@ -126,6 +135,14 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
       }
       
       response = await config.adapter(config);
+
+      attempts.push({
+        url: response.url,
+        duration: response.duration,
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers
+      });
       
       // 6. Validate Status
       const validateStatus = config.validateStatus || ((status) => status >= 200 && status < 300);
@@ -179,8 +196,14 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
       // Default condition: 5xx or 429
       const isRetryStatus = response.status === 429 || response.status >= 500;
       
+      const statusError = createError(`Request failed with status code ${response.status}`, JadyErrorCodes.ENETWORK, config, response);
+      
+      if (attempts.length > 0) {
+        attempts[attempts.length - 1].error = { code: statusError.code, message: statusError.message };
+      }
+
       if (isRetryStatus && retryCount < (config.retry || 0)) {
-        const delay = getRetryDelay(config, retryCount + 1, null, response);
+        const delay = getRetryDelay(config, retryCount + 1, statusError, response);
 
         // Check if waiting would exceed totalTimeout
         if (config.totalTimeout && config.totalTimeout > 0 && (Date.now() - startTime + delay > config.totalTimeout)) {
@@ -188,8 +211,8 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
         }
         
         if (config.hooks?.beforeRetry) {
-           const hookResult = await config.hooks.beforeRetry(createError(`Request failed with status ${response.status}`, JadyErrorCodes.ENETWORK, config, response), retryCount + 1);
-           if (hookResult === false) throw createError(`Request failed with status ${response.status}`, JadyErrorCodes.ENETWORK, config, response);
+           const hookResult = await config.hooks.beforeRetry(statusError, retryCount + 1);
+           if (hookResult === false) throw statusError;
            if (typeof hookResult === 'object') config = hookResult as JadyConfig;
         }
 
@@ -199,11 +222,17 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
       }
 
       // If not retrying, throw error for invalid status
-      throw createError(`Request failed with status code ${response.status}`, JadyErrorCodes.ENETWORK, config, response);
+      throw statusError; //생성해둔 에러 발생
 
     } catch (e: any) {
       error = e;
       response = error.response; // Recover response if available in error
+
+      attempts.push({
+        url: config.url,
+        duration: Date.now() - attemptStartTime,
+        error: { code: error.code || JadyErrorCodes.EUNKNOWN, message: error.message }
+      });
 
       // Check if retry is allowed
       if (isRetryableError(error) && retryCount < (config.retry || 0)) {
@@ -249,6 +278,11 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
   // 10. Hooks: afterResponse
   if (config.hooks?.afterResponse) {
     response = await config.hooks.afterResponse(response!);
+  }
+
+  if (response) {
+    response.attempts = attempts;
+    response.totalDuration = Date.now() - startTime;
   }
 
   return response!;
