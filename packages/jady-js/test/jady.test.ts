@@ -812,4 +812,108 @@ describe('jady-js', () => {
       expect.anything()
     );
   });
+
+  test('should handle params edge cases (empty array, empty string)', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/params-edge',
+      params: {
+        emptyArr: [],
+        emptyStr: '',
+        nullVal: null,
+        undefinedVal: undefined
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/params-edge?emptyStr=',
+      expect.anything()
+    );
+  });
+
+  test('should handle JSON data serialization rules', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/json-rules',
+      method: 'POST',
+      data: {
+        val: null,
+        ignored: undefined,
+        nan: NaN,
+        inf: Infinity
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: JSON.stringify({
+          val: null,
+          nan: null,
+          inf: null
+        })
+      })
+    );
+  });
+
+  test('should format header values correctly', async () => {
+    mockFetchResponse({});
+    const date = new Date('2023-01-01T00:00:00.000Z');
+
+    await jady({
+      url: 'https://api.example.com/header-format',
+      headers: {
+        'X-Date': date,
+        'X-Bool-True': true,
+        'X-Bool-False': false
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-date': date.toUTCString(),
+          'x-bool-true': 'true',
+          'x-bool-false': 'false'
+        })
+      })
+    );
+  });
+
+  test('should handle redirect modes', async () => {
+    // Manual
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers({ 'Location': '/new' }),
+      arrayBuffer: async () => new ArrayBuffer(0)
+    });
+
+    const response = await jady({
+      url: 'https://api.example.com/manual',
+      redirect: 'manual',
+      validateStatus: (status) => status >= 200 && status < 400
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers['location']).toBe('/new');
+
+    // Error (Default validateStatus fails on 302)
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers({ 'Location': '/new' }),
+      arrayBuffer: async () => new ArrayBuffer(0)
+    });
+
+    await expect(jady({
+      url: 'https://api.example.com/error',
+      redirect: 'error'
+    })).rejects.toMatchObject({
+      code: 'ENETWORK'
+    });
+  });
 });
