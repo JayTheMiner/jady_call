@@ -210,7 +210,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       duration,
       totalDuration: duration, // Will be updated by cors.ts
       url: response.url,
-      ok: response.ok,
+      ok: config.validateStatus ? config.validateStatus(response.status) : response.ok,
       attempts: []
     };
   } catch (error: unknown) {

@@ -436,4 +436,66 @@ describe('jady-js', () => {
       })
     );
   });
+
+  test('should handle custom validateStatus', async () => {
+    mockFetchResponse({ error: 'not found' }, 404);
+
+    const response = await jady({
+      url: 'https://api.example.com/404',
+      validateStatus: (status) => status === 404
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.ok).toBe(true);
+  });
+
+  test('should handle different paramsArrayFormat options', async () => {
+    mockFetchResponse({});
+
+    // Brackets
+    await jady({
+      url: 'https://api.example.com/search',
+      params: { ids: [1, 2] },
+      paramsArrayFormat: 'brackets'
+    });
+    
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      'https://api.example.com/search?ids[]=1&ids[]=2',
+      expect.anything()
+    );
+
+    // Index
+    await jady({
+      url: 'https://api.example.com/search',
+      params: { ids: [1, 2] },
+      paramsArrayFormat: 'index'
+    });
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      'https://api.example.com/search?ids[0]=1&ids[1]=2',
+      expect.anything()
+    );
+  });
+
+  test('should stop retry if beforeRetry hook returns false', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: new Headers(),
+      text: async () => 'Error',
+      arrayBuffer: async () => new ArrayBuffer(0)
+    });
+
+    const beforeRetry = jest.fn().mockReturnValue(false);
+
+    await expect(jady({
+      url: 'https://api.example.com/retry-hook',
+      retry: 3,
+      hooks: { beforeRetry }
+    })).rejects.toMatchObject({
+      code: 'ENETWORK'
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(beforeRetry).toHaveBeenCalled();
+  });
 });
