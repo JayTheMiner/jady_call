@@ -72,11 +72,21 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
   // Process Headers (Normalize & Validate)
   config.headers = processHeaders(config.headers);
 
+  if (config.decompress !== false) {
+    if (!config.headers['accept-encoding']) {
+      config.headers['accept-encoding'] = 'gzip, deflate, br';
+    }
+  }
+
   // XSRF Handling (Browser only)
   if (typeof document !== 'undefined' && config.xsrfCookieName && config.xsrfHeaderName) {
-    const xsrfValue = parseCookie(document.cookie, config.xsrfCookieName);
-    if (xsrfValue && !config.headers[config.xsrfHeaderName.toLowerCase()]) {
-      config.headers[config.xsrfHeaderName.toLowerCase()] = xsrfValue;
+    //안전한 메서드(GET, HEAD 등)에는 XSRF 토큰을 포함하지 않음
+    const isSafeMethod = ['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes((config.method || 'GET').toUpperCase());
+    if (!isSafeMethod) {
+      const xsrfValue = parseCookie(document.cookie, config.xsrfCookieName);
+      if (xsrfValue && !config.headers[config.xsrfHeaderName.toLowerCase()]) {
+        config.headers[config.xsrfHeaderName.toLowerCase()] = xsrfValue;
+      }
     }
   }
 

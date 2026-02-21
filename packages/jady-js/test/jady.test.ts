@@ -1575,4 +1575,177 @@ describe('jady-js', () => {
     expect(response.status).toBe(204);
     expect(response.body).toBeNull();
   });
+
+
+
+  // =========================================================================
+  // 🚀 명세 기반 추가 테스트 케이스 (Edge Cases & Missing Features)
+  // =========================================================================
+
+  test('should throw error when params contain nested objects', async () => {
+    // 명세: 중첩 객체(Nested Object)는 지원하지 않으며, 전달 시 예외를 발생시켜야 함.
+    await expect(jady({
+      url: 'https://api.example.com/search',
+      params: { user: { name: 'jady' } } as any // 강제 타입 캐스팅
+    })).rejects.toThrow();
+  });
+
+  test('should merge params with existing query string in url', async () => {
+    mockFetchResponse({});
+    // 명세: url에 이미 쿼리 스트링이 존재하면 params를 그 뒤에 Append 해야 함.
+    await jady({
+      url: 'https://api.example.com/api?page=1',
+      params: { limit: 10 }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/api?page=1&limit=10',
+      expect.anything()
+    );
+  });
+
+  test('should serialize data to query string when content-type is application/x-www-form-urlencoded', async () => {
+    mockFetchResponse({});
+    // 명세: headers에 x-www-form-urlencoded가 명시된 경우 JSON이 아닌 Query String으로 변환.
+    await jady({
+      url: 'https://api.example.com/form',
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      data: { a: 1, b: 'test string' }
+    });
+    
+    const callArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const fetchOptions = callArgs[1];
+    
+    // 본문이 URLSearchParams 이거나 'a=1&b=test+string' 형태의 문자열이어야 함
+    const isUrlEncodedStr = typeof fetchOptions.body === 'string' && fetchOptions.body.includes('a=1') && fetchOptions.body.includes('b=test');
+    const isURLSearchParams = fetchOptions.body instanceof URLSearchParams;
+    
+    expect(isUrlEncodedStr || isURLSearchParams).toBe(true);
+  });
+
+  test('should handle arrays of files and advanced file objects in multipart/form-data', async () => {
+    mockFetchResponse({});
+    const appendSpy = jest.spyOn(FormData.prototype, 'append');
+
+    const blob1 = new Blob(['1']);
+    const blob2 = new Blob(['2']);
+    const blob3 = new Blob(['3']);
+    
+    await jady({
+      url: 'https://api.example.com/upload-advanced',
+      method: 'POST',
+      files: {
+        docs: [blob1, blob2], // 명세: 배열 지원
+        custom: { file: blob3, filename: 'test.csv', contentType: 'text/csv' } // 명세: 객체 형식 지원
+      }
+    });
+
+    // 배열 처리 검증
+    expect(appendSpy).toHaveBeenCalledWith('docs', blob1);
+    expect(appendSpy).toHaveBeenCalledWith('docs', blob2);
+    // 객체 처리 검증 (파일이름이 세 번째 인자로 들어갔는지 확인)
+    expect(appendSpy).toHaveBeenCalledWith('custom', expect.anything(), 'test.csv');
+    
+    appendSpy.mockRestore();
+  });
+
+  test('should NOT add XSRF token for safe methods (GET, HEAD, OPTIONS, TRACE)', async () => {
+    Object.defineProperty(document, 'cookie', {
+      writable: true,
+      value: 'XSRF-TOKEN=abc-123',
+    });
+    mockFetchResponse({});
+
+    // 명세: GET, HEAD 등의 읽기 전용 메서드에는 XSRF 헤더를 추가하지 않음
+    await jady({
+      url: 'https://api.example.com/xsrf-get',
+      method: 'GET',
+      xsrfCookieName: 'XSRF-TOKEN',
+      xsrfHeaderName: 'X-XSRF-TOKEN'
+    });
+
+    const callArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const headers = callArgs[1].headers;
+    
+    expect(headers).not.toHaveProperty('x-xsrf-token');
+  });
+
+  test('should add Accept-Encoding header when decompress is true', async () => {
+    mockFetchResponse({});
+    // 명세: decompress가 true(기본값)일 때 Accept-Encoding 자동 추가
+    await jady({
+      url: 'https://api.example.com/decompress',
+      decompress: true
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'accept-encoding': 'gzip, deflate, br'
+        })
+      })
+    );
+  });
+
+  test('should include duration and totalDuration in response', async () => {
+    mockFetchResponse({});
+    const response = await jady({ url: 'https://api.example.com/time' });
+
+    // 명세: duration과 totalDuration은 Number(ms) 타입이어야 함
+    expect(typeof response.duration).toBe('number');
+    expect(response.duration).toBeGreaterThanOrEqual(0);
+    expect(typeof response.totalDuration).toBe('number');
+    expect(response.totalDuration).toBeGreaterThanOrEqual(response.duration);
+  });
+
+  test('should parse response as JSON when content-type includes +json suffix', async () => {
+    const problemData = { type: 'error', detail: 'Not Found' };
+    // 명세: application/problem+json 등 +json 접미사가 있으면 JSON으로 파싱
+    mockFetchResponse(problemData, 404, { 'content-type': 'application/problem+json' });
+
+    const response = await jady({
+      url: 'https://api.example.com/problem',
+      validateStatus: () => true // 에러를 던지지 않도록 처리하여 body 확인
+    });
+
+    expect(response.body).toEqual(problemData);
+  });
+
+  test('should throw JadyError with standard properties on network failure', async () => {
+    (global.fetch as jest.Mock).mockRejectedValue(new Error('Failed to fetch'));
+
+    // 명세: 발생한 에러 객체는 code, message, config, response(옵션) 필드를 가져야 함
+    try {
+      await jady({ url: 'https://api.example.com/fail' });
+      fail('Should have thrown an error'); // 여기까지 도달하면 안 됨
+    } catch (error: any) {
+      expect(error.code).toBe('ENETWORK');
+      expect(error.message).toBeDefined();
+      expect(error.config).toBeDefined();
+      expect(error.config.url).toBe('https://api.example.com/fail');
+    }
+  });
+
+  test('should parse Set-Cookie header into an array', async () => {
+    // 명세: 여러 개의 Set-Cookie 헤더를 문자열 배열(String[])로 반환해야 함
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        // fetch API의 Headers 객체가 getSetCookie()를 지원하는 환경 모방
+        getSetCookie: () => ['session=123', 'theme=dark'],
+        forEach: (cb: any) => cb('session=123, theme=dark', 'set-cookie')
+      },
+      text: async () => 'ok',
+      arrayBuffer: async () => new ArrayBuffer(0)
+    });
+
+    const response = await jady({ url: 'https://api.example.com/cookies' });
+    
+    // 주의: Fetch API의 환경에 따라 구현이 다를 수 있지만, 최종 반환값은 배열이어야 함.
+    expect(Array.isArray(response.headers['set-cookie'])).toBe(true);
+    expect(response.headers['set-cookie']).toContain('session=123');
+  });
 });
