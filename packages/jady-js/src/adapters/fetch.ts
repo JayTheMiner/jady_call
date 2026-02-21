@@ -14,10 +14,10 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
         const encoded = typeof btoa !== 'undefined' 
           ? btoa(unescape(encodeURIComponent(`${username}:${password || ''}`)))
           : Buffer.from(`${username}:${password || ''}`).toString('base64');
-        headers['Authorization'] = `Basic ${encoded}`;
+        headers['authorization'] = `Basic ${encoded}`;
       } else if (bearer) {
         // Bearer Auth
-        headers['Authorization'] = `Bearer ${bearer}`;
+        headers['authorization'] = `Bearer ${bearer}`;
       }
     }
   }
@@ -67,13 +67,23 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
              !(typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer)) {
     body = JSON.stringify(body);
     if (!headers['Content-Type'] && !headers['content-type']) {
-      headers['Content-Type'] = 'application/json';
+      headers['content-type'] = 'application/json';
     }
   }
 
   // 3. Timeout Handling
   const controller = new AbortController();
-  const signal = config.signal ? config.signal : controller.signal; // Merge signals if needed
+  
+  const onSignalAbort = () => controller.abort();
+  if (config.signal) {
+    if (config.signal.aborted) {
+      controller.abort();
+    } else {
+      config.signal.addEventListener('abort', onSignalAbort);
+    }
+  }
+
+  const signal = controller.signal;
   let timeoutId: any;
 
   if (config.timeout && config.timeout > 0) {
@@ -91,8 +101,6 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       // credentials: config.withCredentials ? 'include' : 'same-origin',
     });
     
-    if (timeoutId) clearTimeout(timeoutId);
-
     const endTime = Date.now();
     const duration = endTime - startTime;
 
@@ -189,11 +197,20 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       ok: response.ok,
       attempts: []
     };
-  } catch (error: any) {
-    if (timeoutId) clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
+  } catch (error: unknown) {
+    const isAbortError = (error instanceof Error && error.name === 'AbortError') || 
+                         (typeof error === 'object' && error !== null && (error as any).name === 'AbortError');
+    if (isAbortError) {
+      if (config.signal?.aborted) {
+        throw createError('Canceled', JadyErrorCodes.ECANCELED, config, undefined, error);
+      }
       throw createError('Request timed out', JadyErrorCodes.ETIMEDOUT, config, undefined, error);
     }
-    throw createError(error.message, JadyErrorCodes.ENETWORK, config, undefined, error);
+    throw createError(error instanceof Error ? error.message : String(error), JadyErrorCodes.ENETWORK, config, undefined, error);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (config.signal) {
+      config.signal.removeEventListener('abort', onSignalAbort);
+    }
   }
 }

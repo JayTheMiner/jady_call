@@ -32,6 +32,54 @@ describe('jady-js', () => {
     }));
   });
 
+  test('should make a POST request with JSON body', async () => {
+    mockFetchResponse({ created: true }, 201, { 'content-type': 'application/json' });
+    const postData = { name: 'jady', version: 1 };
+
+    const response = await jady({
+      url: 'https://api.example.com/users',
+      method: 'POST',
+      data: postData,
+    });
+
+    expect(response.status).toBe(201);
+    expect(global.fetch).toHaveBeenCalledWith('https://api.example.com/users', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({ 'content-type': 'application/json' }),
+      body: JSON.stringify(postData),
+    }));
+  });
+
+  test('should handle multipart/form-data for file uploads', async () => {
+    mockFetchResponse({ uploaded: true });
+
+    // Spy on FormData to check what's being appended
+    const appendSpy = jest.spyOn(FormData.prototype, 'append');
+
+    const file = new Blob(['file content'], { type: 'text/plain' });
+    const textData = { description: 'A test file' };
+
+    await jady({
+      url: 'https://api.example.com/upload',
+      method: 'POST',
+      data: textData,
+      files: {
+        theFile: file,
+      },
+    });
+
+    expect(appendSpy).toHaveBeenCalledWith('description', 'A test file');
+    expect(appendSpy).toHaveBeenCalledWith('theFile', expect.objectContaining({
+      type: 'text/plain'
+    }));
+
+    const fetchCall = (global.fetch as jest.Mock).mock.calls[0];
+    const fetchOptions = fetchCall[1];
+    expect(fetchOptions.body).toBeInstanceOf(FormData);
+
+    appendSpy.mockRestore();
+  });
+
   test('should handle path parameters substitution', async () => {
     mockFetchResponse({});
 
@@ -152,9 +200,15 @@ describe('jady-js', () => {
     (global.fetch as jest.Mock).mockImplementation((url, options) => {
       return new Promise((resolve, reject) => {
         if (options.signal?.aborted) {
-          reject({ name: 'AbortError' });
+          const err = new Error('Aborted');
+          err.name = 'AbortError';
+          reject(err);
         } else {
-          options.signal?.addEventListener('abort', () => reject({ name: 'AbortError' }));
+          options.signal?.addEventListener('abort', () => {
+            const err = new Error('Aborted');
+            err.name = 'AbortError';
+            reject(err);
+          });
         }
       });
     });
@@ -172,5 +226,130 @@ describe('jady-js', () => {
     });
 
     jest.useRealTimers();
+  });
+
+  test('should follow redirects and change method to GET on 301 from POST', async () => {
+    const originalUrl = 'https://api.example.com/create';
+    const redirectUrl = 'https://api.example.com/new-location';
+
+    // First call: 301 Redirect
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 301,
+      statusText: 'Moved Permanently',
+      headers: new Headers({ 'Location': redirectUrl }),
+      // No body methods needed for redirect response
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+
+    // Second call: 200 OK
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ success: true }),
+      text: async () => JSON.stringify({ success: true }),
+    });
+
+    const response = await jady({
+      url: originalUrl,
+      method: 'POST',
+      data: { some: 'data' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ success: true });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    // Check second call (GET to new URL, no body)
+    const secondCall = (global.fetch as jest.Mock).mock.calls[1];
+    expect(secondCall[0]).toBe(redirectUrl);
+    expect(secondCall[1].method).toBe('GET');
+    expect(secondCall[1].body).toBeUndefined();
+  });
+
+  test('should handle basic auth', async () => {
+    mockFetchResponse({ authenticated: true });
+
+    await jady({
+      url: 'https://api.example.com/auth',
+      auth: { username: 'user', password: 'password' }
+    });
+
+    // "user:password" in base64 is "dXNlcjpwYXNzd29yZA=="
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'authorization': 'Basic dXNlcjpwYXNzd29yZA=='
+        })
+      })
+    );
+  });
+
+  test('should handle bearer auth', async () => {
+    mockFetchResponse({ authenticated: true });
+
+    await jady({
+      url: 'https://api.example.com/auth',
+      auth: { bearer: 'my-token' }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'authorization': 'Bearer my-token'
+        })
+      })
+    );
+  });
+
+  test('should cancel request via signal', async () => {
+    const controller = new AbortController();
+    
+    // Mock fetch to wait
+    (global.fetch as jest.Mock).mockImplementation((url, options) => {
+      return new Promise((resolve, reject) => {
+        if (options.signal?.aborted) {
+          const err = new Error('Aborted');
+          err.name = 'AbortError';
+          reject(err);
+        } else {
+          options.signal?.addEventListener('abort', () => {
+            const err = new Error('Aborted');
+            err.name = 'AbortError';
+            reject(err);
+          });
+        }
+      });
+    });
+
+    const promise = jady({
+      url: 'https://api.example.com/cancel',
+      signal: controller.signal
+    });
+
+    // Abort immediately
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({
+      code: 'ECANCELED'
+    });
+  });
+
+  test('should save raw body when requested', async () => {
+    const body = { data: 'raw' };
+    mockFetchResponse(body, 200, { 'content-type': 'application/json' });
+
+    const response = await jady({
+      url: 'https://api.example.com/raw',
+      saveRawBody: true,
+      responseType: 'json'
+    });
+
+    expect(response.body).toEqual(body);
+    expect(response.rawBody).toBe(JSON.stringify(body));
   });
 });

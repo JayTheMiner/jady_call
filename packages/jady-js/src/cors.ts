@@ -151,9 +151,16 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
         // Create next config
         const nextConfig = { ...config, url: nextUrl, method: nextMethod, data: nextData };
 
-        // Security: Strip headers on cross-domain redirect
-        // Simple check: if host changes (implementation simplified for now)
-        // In a real implementation, we would parse the URL to check host/port/protocol
+        // 명세에 따른 보안 조치: Cross-domain 리다이렉트 시 민감한 헤더를 제거합니다.
+        // (주로 서버 환경에 해당하며, 브라우저는 자체 보안 정책을 따릅니다.)
+        try {
+          const currentOrigin = new URL(config.url).origin;
+          const nextOrigin = new URL(nextUrl).origin;
+          if (currentOrigin !== nextOrigin) {
+            delete nextConfig.headers?.['authorization'];
+            delete nextConfig.headers?.['cookie'];
+          }
+        } catch (e) { /* URL 파싱 에러는 무시 */ }
         
         if (config.hooks?.beforeRedirect) {
           await config.hooks.beforeRedirect(nextConfig, response);

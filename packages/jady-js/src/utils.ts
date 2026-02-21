@@ -48,10 +48,12 @@ export function buildFullPath(baseURL?: string, requestedURL?: string): string {
 export function mergeConfig(config1: any, config2: any): any {
   const result = { ...config1 };
   for (const key in config2) {
-    if (config2[key] && typeof config2[key] === 'object' && !Array.isArray(config2[key])) {
-      result[key] = mergeConfig(result[key] || {}, config2[key]);
+    const val = config2[key];
+    // Only deep merge plain objects to preserve class instances (like AbortSignal, FormData)
+    if (val && typeof val === 'object' && !Array.isArray(val) && val.constructor === Object) {
+      result[key] = mergeConfig(result[key] || {}, val);
     } else {
-      result[key] = config2[key];
+      result[key] = val;
     }
   }
   return result;
