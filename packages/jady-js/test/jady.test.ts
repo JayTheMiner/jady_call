@@ -916,4 +916,71 @@ describe('jady-js', () => {
       code: 'ENETWORK'
     });
   });
+
+  test('should support URLSearchParams in params', async () => {
+    mockFetchResponse({});
+    const params = new URLSearchParams();
+    params.append('key', 'value');
+    params.append('arr', '1');
+    params.append('arr', '2');
+
+    await jady({
+      url: 'https://api.example.com/search',
+      params
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/https:\/\/api\.example\.com\/search\?key=value&arr=1&arr=2/),
+      expect.anything()
+    );
+  });
+
+  test('should support URLSearchParams in data (post)', async () => {
+    mockFetchResponse({});
+    const params = new URLSearchParams({ key: 'value' });
+
+    await jady({
+      url: 'https://api.example.com/post',
+      method: 'POST',
+      data: params
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: params
+      })
+    );
+    
+    const callArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const headers = callArgs[1].headers;
+    // fetchAdapter adds application/json if body is object and NOT URLSearchParams etc.
+    // So here it should NOT be added (browser/fetch adds it automatically).
+    expect(headers).not.toHaveProperty('content-type');
+    expect(headers).not.toHaveProperty('Content-Type');
+  });
+
+  test('should handle hash in URL correctly with params', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/page#section',
+      params: { page: 1 }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/page?page=1#section',
+      expect.anything()
+    );
+  });
+
+  test('should fail on 304 with default validateStatus', async () => {
+    mockFetchResponse({}, 304);
+
+    await expect(jady({
+      url: 'https://api.example.com/cache'
+    })).rejects.toMatchObject({
+      code: 'ENETWORK'
+    });
+  });
 });
