@@ -104,7 +104,7 @@ export interface JadyConfig {
   files?: Record<string, any | any[]>; // File, Blob, Stream, Path, or { file, filename, contentType }
   
   // --- Headers & Cookies ---
-  headers?: Record<string, string | number | boolean | null | undefined>;
+  headers?: Record<string, string | string[] | number | boolean | null | undefined>;
   cookieMode?: CookieMode;
   
   // --- Timeout ---

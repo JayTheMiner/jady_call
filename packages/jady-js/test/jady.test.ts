@@ -730,4 +730,86 @@ describe('jady-js', () => {
       expect.anything()
     );
   });
+
+  test('should handle headers processing (array join, null removal)', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/headers-proc',
+      headers: {
+        'X-List': ['a', 'b'],
+        'X-Null': null,
+        'X-Undefined': undefined,
+        'X-Keep': 'value'
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-list': 'a,b',
+          'x-keep': 'value'
+        })
+      })
+    );
+    
+    const callArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const headers = callArgs[1].headers;
+    expect(headers).not.toHaveProperty('x-null');
+    expect(headers).not.toHaveProperty('x-undefined');
+  });
+
+  test('should prioritize manual Authorization header over auth config', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/auth-priority',
+      auth: { username: 'user', password: 'pw' },
+      headers: {
+        'Authorization': 'Bearer manual-token'
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'authorization': 'Bearer manual-token'
+        })
+      })
+    );
+  });
+
+  test('should force text response with responseType: text', async () => {
+    const data = { key: 'value' };
+    mockFetchResponse(data, 200, { 'content-type': 'application/json' });
+
+    const response = await jady({
+      url: 'https://api.example.com/text-response',
+      responseType: 'text'
+    });
+
+    expect(typeof response.body).toBe('string');
+    expect(response.body).toBe(JSON.stringify(data));
+  });
+
+  test('should serialize boolean and number params', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/types',
+      params: {
+        flag: true,
+        num: 123,
+        zero: 0,
+        falseFlag: false
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/types?flag=true&num=123&zero=0&falseFlag=false',
+      expect.anything()
+    );
+  });
 });

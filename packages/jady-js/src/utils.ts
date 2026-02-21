@@ -205,7 +205,15 @@ export function processHeaders(headers: any): Record<string, string> {
     const value = headers[key];
     if (value === null || typeof value === 'undefined') return;
 
-    const strValue = String(value);
+    let strValue: string;
+    if (Array.isArray(value)) {
+      strValue = value.join(',');
+    } else if (isDate(value)) {
+      strValue = value.toUTCString();
+    } else {
+      strValue = String(value);
+    }
+
     if (/[\r\n]/.test(strValue)) throw new Error(`Invalid header value for "${key}"`);
 
     normalized[key.toLowerCase()] = strValue;
