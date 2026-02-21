@@ -1060,4 +1060,79 @@ describe('jady-js', () => {
     expect(response.body.date).toBeInstanceOf(Date);
     expect(response.body.date.toISOString()).toBe(dateStr);
   });
+
+  test('should report download progress', async () => {
+    if (typeof ReadableStream === 'undefined' || typeof Response === 'undefined') return;
+
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.enqueue(new Uint8Array([4, 5]));
+        controller.close();
+      }
+    });
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-length': '5' }),
+      body: stream
+    });
+
+    const onDownloadProgress = jest.fn();
+
+    await jady({
+      url: 'https://api.example.com/download',
+      onDownloadProgress,
+      responseType: 'arraybuffer'
+    });
+
+    expect(onDownloadProgress).toHaveBeenCalledTimes(2);
+    expect(onDownloadProgress).toHaveBeenNthCalledWith(1, { loaded: 3, total: 5 });
+    expect(onDownloadProgress).toHaveBeenNthCalledWith(2, { loaded: 5, total: 5 });
+  });
+
+  test('should return stream when responseType is stream', async () => {
+    if (typeof ReadableStream === 'undefined') return;
+    
+    const stream = new ReadableStream({ start(c) { c.close(); } });
+    
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: stream
+    });
+
+    const response = await jady({
+      url: 'https://api.example.com/stream',
+      responseType: 'stream'
+    });
+
+    expect(response.body).toBe(stream);
+  });
+
+  test('should pass meta data to response', async () => {
+    mockFetchResponse({});
+    const meta = { id: 'test-req' };
+
+    const response = await jady({
+      url: 'https://api.example.com/meta',
+      meta
+    });
+
+    expect(response.config.meta).toEqual(meta);
+  });
+
+  test('should allow 304 with custom validateStatus', async () => {
+    mockFetchResponse({}, 304);
+
+    const response = await jady({
+      url: 'https://api.example.com/304',
+      validateStatus: (status) => status === 304
+    });
+
+    expect(response.status).toBe(304);
+    expect(response.ok).toBe(true);
+  });
 });
