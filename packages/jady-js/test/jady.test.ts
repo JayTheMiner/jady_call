@@ -352,4 +352,88 @@ describe('jady-js', () => {
     expect(response.body).toEqual(body);
     expect(response.rawBody).toBe(JSON.stringify(body));
   });
+
+  test('should handle JSON parse error (EPARSE)', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => 'invalid json',
+      json: async () => { throw new Error('Unexpected token'); }
+    });
+
+    await expect(jady({
+      url: 'https://api.example.com/bad-json',
+      responseType: 'json'
+    })).rejects.toMatchObject({
+      code: 'EPARSE'
+    });
+  });
+
+  test('should throw EMAXREDIRECTS when redirect limit exceeded', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 302,
+      headers: new Headers({ 'Location': '/loop' }),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+
+    await expect(jady({
+      url: 'https://api.example.com/loop',
+      maxRedirects: 2
+    })).rejects.toMatchObject({
+      code: 'EMAXREDIRECTS'
+    });
+    
+    // Initial + 2 redirects = 3 calls
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  test('should retry on 429 Too Many Requests', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: new Headers(),
+        text: async () => 'Too Many Requests',
+        arrayBuffer: async () => new TextEncoder().encode('Too Many Requests').buffer
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ success: true }),
+        text: async () => JSON.stringify({ success: true })
+      });
+
+    const response = await jady({
+      url: 'https://api.example.com/rate-limit',
+      retry: 1
+    });
+
+    expect(response.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('should normalize headers to lowercase', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/headers',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Custom-Header': 'Value'
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'content-type': 'application/json',
+          'x-custom-header': 'Value'
+        })
+      })
+    );
+  });
 });

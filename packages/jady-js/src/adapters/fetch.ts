@@ -145,13 +145,21 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       rawBody = text;
 
       if (config.responseType === 'json') {
-        responseBody = JSON.parse(text);
+        try {
+          responseBody = JSON.parse(text);
+        } catch (e) {
+          throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
+        }
       } else if (config.responseType === 'text') {
         responseBody = text;
       } else {
         // Auto
         if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
-          responseBody = JSON.parse(text);
+          try {
+            responseBody = JSON.parse(text);
+          } catch (e) {
+            throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
+          }
         } else {
           responseBody = text;
         }
@@ -160,7 +168,11 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       if (config.responseType === 'stream') {
         responseBody = rawResponse.body;
       } else if (config.responseType === 'json') {
-        responseBody = await rawResponse.json();
+        try {
+          responseBody = await rawResponse.json();
+        } catch (e) {
+          throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
+        }
       } else if (config.responseType === 'text') {
         responseBody = await rawResponse.text();
       } else if (config.responseType === 'blob') {
@@ -170,7 +182,11 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       } else {
         // Auto
         if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
-          responseBody = await rawResponse.json();
+          try {
+            responseBody = await rawResponse.json();
+          } catch (e) {
+            throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
+          }
         } else if (contentType && (contentType.includes('text/') || contentType.includes('xml'))) {
           responseBody = await rawResponse.text();
         } else {
@@ -198,6 +214,10 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       attempts: []
     };
   } catch (error: unknown) {
+    if (error && (error as any).code) {
+      throw error;
+    }
+
     const isAbortError = (error instanceof Error && error.name === 'AbortError') || 
                          (typeof error === 'object' && error !== null && (error as any).name === 'AbortError');
     if (isAbortError) {
