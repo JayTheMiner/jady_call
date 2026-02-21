@@ -111,6 +111,15 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
     const endTime = Date.now();
     const duration = endTime - startTime;
 
+    // Check maxBodyLength (Content-Length)
+    const maxBodyLength = config.platform?.maxBodyLength;
+    if (maxBodyLength && maxBodyLength > 0) {
+      const contentLength = Number(response.headers.get('content-length'));
+      if (!isNaN(contentLength) && contentLength > maxBodyLength) {
+         throw createError(`Content-Length ${contentLength} exceeds maxBodyLength ${maxBodyLength}`, JadyErrorCodes.ENETWORK, config);
+      }
+    }
+
     // 4. Response Processing
     let responseBody: any;
     let rawBody: string | undefined;
@@ -146,10 +155,20 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
 
     const contentType = rawResponse.headers.get('content-type');
 
-    // Handle saveRawBody
-    // If jsonReviver is present, we must use text() + JSON.parse()
-    if ((config.saveRawBody || config.jsonReviver) && config.responseType !== 'stream' && config.responseType !== 'blob' && config.responseType !== 'arraybuffer' && config.responseType !== 'bytes') {
-      const text = await rawResponse.text();
+    // Handle Text Decoding (responseEncoding)
+    const useResponseEncoding = config.responseEncoding && config.responseEncoding.toLowerCase() !== 'utf-8';
+    const getText = async () => {
+      if (useResponseEncoding) {
+        const buffer = await rawResponse.arrayBuffer();
+        const decoder = new TextDecoder(config.responseEncoding);
+        return decoder.decode(buffer);
+      }
+      return rawResponse.text();
+    };
+
+    // Handle saveRawBody, jsonReviver, or custom encoding
+    if ((config.saveRawBody || config.jsonReviver || useResponseEncoding) && config.responseType !== 'stream' && config.responseType !== 'blob' && config.responseType !== 'arraybuffer' && config.responseType !== 'bytes') {
+      const text = await getText();
       rawBody = text;
 
       if (config.responseType === 'json') {

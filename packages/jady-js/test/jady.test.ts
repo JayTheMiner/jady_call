@@ -1211,4 +1211,43 @@ describe('jady-js', () => {
     const headers = callArgs[1].headers;
     expect(headers).not.toHaveProperty('content-type');
   });
+
+  test('should enforce maxBodyLength', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-length': '1024' }),
+      text: async () => 'large body'
+    });
+
+    await expect(jady({
+      url: 'https://api.example.com/large',
+      platform: {
+        maxBodyLength: 100
+      }
+    })).rejects.toMatchObject({
+      code: 'ENETWORK',
+      message: expect.stringContaining('exceeds maxBodyLength')
+    });
+  });
+
+  test('should support responseEncoding', async () => {
+    // Use iso-8859-1 which is widely supported in Node.js environments without full-icu
+    // 0xFF in iso-8859-1 is 'ÿ'
+    const buffer = new Uint8Array([0xFF]).buffer;
+    
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      arrayBuffer: async () => buffer
+    });
+
+    const response = await jady({
+      url: 'https://api.example.com/encoding',
+      responseEncoding: 'iso-8859-1'
+    });
+
+    expect(response.body).toBe('ÿ');
+  });
 });
