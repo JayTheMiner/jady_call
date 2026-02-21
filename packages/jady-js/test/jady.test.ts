@@ -498,4 +498,98 @@ describe('jady-js', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(beforeRetry).toHaveBeenCalled();
   });
+
+  test('should handle network error (ENETWORK)', async () => {
+    (global.fetch as jest.Mock).mockRejectedValue(new Error('Network Failure'));
+
+    await expect(jady({
+      url: 'https://api.example.com/network-error'
+    })).rejects.toMatchObject({
+      code: 'ENETWORK',
+      message: 'Network Failure'
+    });
+  });
+
+  test('should use custom paramsSerializer', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/custom-params',
+      params: { a: 1, b: 2 },
+      paramsSerializer: (params) => {
+        return Object.keys(params).map(key => `${key}-${params[key]}`).join(';');
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/custom-params?a-1;b-2',
+      expect.anything()
+    );
+  });
+
+  test('should add XSRF header from cookie in browser environment', async () => {
+    // Mock document.cookie for JSDOM
+    Object.defineProperty(document, 'cookie', {
+      writable: true,
+      value: 'XSRF-TOKEN=abc-123',
+    });
+
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/xsrf',
+      method: 'POST',
+      xsrfCookieName: 'XSRF-TOKEN',
+      xsrfHeaderName: 'X-XSRF-TOKEN'
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-xsrf-token': 'abc-123'
+        })
+      })
+    );
+  });
+
+  test('should respect Retry-After header', async () => {
+    jest.useFakeTimers();
+    
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        headers: new Headers({ 'Retry-After': '1' }), // 1 second
+        text: async () => 'Service Unavailable',
+        arrayBuffer: async () => new ArrayBuffer(0)
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ success: true }),
+        text: async () => JSON.stringify({ success: true }),
+        arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ success: true })).buffer
+      });
+
+    const requestPromise = jady({
+      url: 'https://api.example.com/retry-after',
+      retry: 1
+    });
+
+    // Wait for the retry logic to process the first response and schedule the timeout
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Advance time to trigger retry (1000ms)
+    jest.advanceTimersByTime(1000);
+
+    const response = await requestPromise;
+    expect(response.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    
+    jest.useRealTimers();
+  });
 });
