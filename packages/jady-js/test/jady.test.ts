@@ -592,4 +592,73 @@ describe('jady-js', () => {
     
     jest.useRealTimers();
   });
+
+  test('should combine baseUrl and url correctly', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      baseUrl: 'https://api.example.com/v1/',
+      url: '/users'
+    });
+
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      'https://api.example.com/v1/users',
+      expect.anything()
+    );
+
+    await jady({
+      baseUrl: 'https://api.example.com/v1',
+      url: 'users'
+    });
+
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      'https://api.example.com/v1/users',
+      expect.anything()
+    );
+  });
+
+  test('should filter null and undefined params', async () => {
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/search',
+      params: {
+        valid: 'value',
+        empty: null,
+        missing: undefined,
+        list: ['a', null, 'b']
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/search?valid=value&list=a&list=b',
+      expect.anything()
+    );
+  });
+
+  test('should respect totalTimeout across retries', async () => {
+    jest.useFakeTimers();
+    
+    (global.fetch as jest.Mock).mockRejectedValue(new Error('Network Error'));
+
+    const requestPromise = jady({
+      url: 'https://api.example.com/total-timeout',
+      retry: 3,
+      retryDelay: 1000,
+      totalTimeout: 1500
+    });
+
+    // Initial request fails. Retry 1 scheduled (delay 1000ms).
+    // Current elapsed: 0. Next elapsed: 1000. 1000 < 1500. OK.
+    await Promise.resolve();
+    jest.advanceTimersByTime(1000);
+    
+    // Retry 1 fails. Retry 2 scheduled (delay 1000ms).
+    // Current elapsed: 1000. Next elapsed: 2000. 2000 > 1500. Fail.
+    await expect(requestPromise).rejects.toMatchObject({
+      code: 'ETIMEDOUT'
+    });
+
+    jest.useRealTimers();
+  });
 });
