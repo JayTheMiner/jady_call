@@ -983,4 +983,81 @@ describe('jady-js', () => {
       code: 'ENETWORK'
     });
   });
+
+  test('should pass fetch specific options', async () => {
+    mockFetchResponse({});
+    
+    await jady({
+      url: 'https://api.example.com/options',
+      cache: 'no-cache',
+      integrity: 'sha256-abc',
+      priority: 'high',
+      withCredentials: true,
+      platform: {
+        keepAlive: true,
+        referrer: 'https://google.com',
+        referrerPolicy: 'no-referrer'
+      }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        cache: 'no-cache',
+        integrity: 'sha256-abc',
+        priority: 'high',
+        credentials: 'include',
+        keepalive: true,
+        referrer: 'https://google.com',
+        referrerPolicy: 'no-referrer'
+      })
+    );
+  });
+
+  test('should use jsonReplacer and jsonReviver', async () => {
+    // Replacer
+    mockFetchResponse({ raw: 'value' });
+    
+    const replacer = (key: string, value: any) => {
+      if (key === 'secret') return undefined;
+      return value;
+    };
+
+    await jady({
+      url: 'https://api.example.com/replacer',
+      method: 'POST',
+      data: { public: 'visible', secret: 'hidden' },
+      jsonReplacer: replacer
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: JSON.stringify({ public: 'visible' })
+      })
+    );
+
+    // Reviver
+    const reviver = (key: string, value: any) => {
+      if (key === 'date') return new Date(value);
+      return value;
+    };
+    
+    const dateStr = '2023-01-01T00:00:00.000Z';
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify({ date: dateStr })
+    });
+
+    const response = await jady({
+      url: 'https://api.example.com/reviver',
+      responseType: 'json',
+      jsonReviver: reviver
+    });
+
+    expect(response.body.date).toBeInstanceOf(Date);
+    expect(response.body.date.toISOString()).toBe(dateStr);
+  });
 });

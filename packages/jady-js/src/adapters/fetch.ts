@@ -65,7 +65,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
              !(typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) &&
              !(typeof Blob !== 'undefined' && body instanceof Blob) &&
              !(typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer)) {
-    body = JSON.stringify(body);
+    body = JSON.stringify(body, config.jsonReplacer);
     if (!headers['Content-Type'] && !headers['content-type']) {
       headers['content-type'] = 'application/json';
     }
@@ -97,8 +97,14 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
       headers,
       body,
       signal,
-      // mode: 'cors', // Default
-      // credentials: config.withCredentials ? 'include' : 'same-origin',
+      cache: config.cache,
+      integrity: config.integrity,
+      // @ts-ignore
+      priority: config.priority,
+      keepalive: config.platform?.keepAlive,
+      referrer: config.platform?.referrer,
+      referrerPolicy: config.platform?.referrerPolicy as ReferrerPolicy,
+      credentials: config.withCredentials ? 'include' : 'same-origin',
     });
     
     const endTime = Date.now();
@@ -140,13 +146,14 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
     const contentType = rawResponse.headers.get('content-type');
 
     // Handle saveRawBody
-    if (config.saveRawBody && config.responseType !== 'stream' && config.responseType !== 'blob' && config.responseType !== 'arraybuffer' && config.responseType !== 'bytes') {
+    // If jsonReviver is present, we must use text() + JSON.parse()
+    if ((config.saveRawBody || config.jsonReviver) && config.responseType !== 'stream' && config.responseType !== 'blob' && config.responseType !== 'arraybuffer' && config.responseType !== 'bytes') {
       const text = await rawResponse.text();
       rawBody = text;
 
       if (config.responseType === 'json') {
         try {
-          responseBody = JSON.parse(text);
+          responseBody = JSON.parse(text, config.jsonReviver);
         } catch (e) {
           throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
         }
@@ -156,7 +163,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
         // Auto
         if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
           try {
-            responseBody = JSON.parse(text);
+            responseBody = JSON.parse(text, config.jsonReviver);
           } catch (e) {
             throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
           }
@@ -169,6 +176,8 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
         responseBody = rawResponse.body;
       } else if (config.responseType === 'json') {
         try {
+          // Native .json() doesn't support reviver, so we must use text() if reviver is present (handled in if block above)
+          // But if we are here, it means saveRawBody and jsonReviver are falsy.
           responseBody = await rawResponse.json();
         } catch (e) {
           throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
