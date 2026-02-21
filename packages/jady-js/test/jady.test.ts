@@ -1748,4 +1748,67 @@ describe('jady-js', () => {
     expect(Array.isArray(response.headers['set-cookie'])).toBe(true);
     expect(response.headers['set-cookie']).toContain('session=123');
   });
+
+  test('should auto-generate requestId if not provided', async () => {
+    mockFetchResponse({});
+    const response = await jady({ url: 'https://api.example.com/auto-req-id' });
+
+    // 명세: 설정하지 않으면 UUID 등을 자동 생성하여 할당
+    expect(response.config.requestId).toBeDefined();
+    expect(typeof response.config.requestId).toBe('string');
+    expect(response.config.requestId?.length).toBeGreaterThan(0);
+  });
+
+  test('should preserve provided requestId', async () => {
+    mockFetchResponse({});
+    const customId = 'my-custom-id-777';
+    const response = await jady({
+      url: 'https://api.example.com/custom-req-id',
+      requestId: customId
+    });
+
+    // 명세: 사용자가 전달한 requestId는 덮어쓰지 않고 유지되어야 함
+    expect(response.config.requestId).toBe(customId);
+  });
+
+  test('should serialize platform.cookies into Cookie header when cookieMode is manual', async () => {
+    mockFetchResponse({});
+    await jady({
+      url: 'https://api.example.com/manual-cookie',
+      cookieMode: 'manual',
+      platform: {
+        cookies: { session: 'abc-123', theme: 'dark', ignored: null } as any
+      }
+    });
+
+    // 명세: cookieMode: 'manual'일 때 platform.cookies를 직렬화하여 Cookie 헤더 생성
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          // processHeaders에 의해 소문자로 정규화됨
+          'cookie': 'session=abc-123; theme=dark'
+        })
+      })
+    );
+  });
+
+  test('should NOT serialize platform.cookies when cookieMode is not manual', async () => {
+    mockFetchResponse({});
+    await jady({
+      url: 'https://api.example.com/ignore-cookie',
+      cookieMode: 'none', // 기본값이거나 manual이 아닌 경우
+      platform: {
+        cookies: { session: 'should-be-ignored' }
+      }
+    });
+
+    const callArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const headers = callArgs[1].headers;
+    
+    // 명세: cookieMode가 'manual'이 아닐 때는 platform.cookies가 무시되어야 함
+    expect(headers).not.toHaveProperty('cookie');
+  });
+
+
 });

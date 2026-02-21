@@ -69,9 +69,27 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
   let config = mergeConfig(defaults, userConfig) as JadyConfig;
   const startTime = Date.now();
 
-  // Process Headers (Normalize & Validate)
+  // requestId 자동 생성 (없을 경우 UUID 또는 랜덤 문자열 부여)
+  if (!config.requestId) {
+    config.requestId = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+      ? crypto.randomUUID() 
+      : Math.random().toString(36).substring(2, 15);
+  }
+
   config.headers = processHeaders(config.headers);
 
+   // cookieMode 'manual' 처리 (반드시 processHeaders 이후에 배치)
+  if (config.cookieMode === 'manual' && config.platform?.cookies) {
+    const cookieStr = Object.entries(config.platform.cookies)
+      .filter(([_, v]) => v !== null && v !== undefined)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('; ');
+    if (cookieStr) {
+      config.headers['cookie'] = cookieStr; // 정규화 이후이므로 안전하게 소문자 키 할당
+    }
+  }
+
+  // decompress가 true일 때 Accept-Encoding 자동 추가
   if (config.decompress !== false) {
     if (!config.headers['accept-encoding']) {
       config.headers['accept-encoding'] = 'gzip, deflate, br';
