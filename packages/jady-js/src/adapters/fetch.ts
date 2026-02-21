@@ -64,7 +64,8 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
              !(typeof FormData !== 'undefined' && body instanceof FormData) &&
              !(typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) &&
              !(typeof Blob !== 'undefined' && body instanceof Blob) &&
-             !(typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer)) {
+             !(typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer) &&
+             !(typeof ReadableStream !== 'undefined' && body instanceof ReadableStream)) {
     body = JSON.stringify(body, config.jsonReplacer);
     if (!headers['Content-Type'] && !headers['content-type']) {
       headers['content-type'] = 'application/json';

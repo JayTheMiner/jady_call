@@ -1135,4 +1135,80 @@ describe('jady-js', () => {
     expect(response.status).toBe(304);
     expect(response.ok).toBe(true);
   });
+
+  test('should execute beforeError hook', async () => {
+    (global.fetch as jest.Mock).mockRejectedValue(new Error('Network Error'));
+
+    const beforeError = jest.fn(async (err) => {
+      err.message = 'Modified Error';
+      return err;
+    });
+
+    await expect(jady({
+      url: 'https://api.example.com/error',
+      hooks: { beforeError }
+    })).rejects.toMatchObject({
+      message: 'Modified Error'
+    });
+
+    expect(beforeError).toHaveBeenCalled();
+  });
+
+  test('should execute beforeRedirect hook', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers({ 'Location': '/new' }),
+      arrayBuffer: async () => new ArrayBuffer(0)
+    }).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => 'ok',
+      arrayBuffer: async () => new ArrayBuffer(0)
+    });
+
+    const beforeRedirect = jest.fn();
+
+    await jady({
+      url: 'https://api.example.com/redirect',
+      hooks: { beforeRedirect }
+    });
+
+    expect(beforeRedirect).toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('/new') }),
+      expect.objectContaining({ status: 302 })
+    );
+  });
+
+  test('should handle ReadableStream as request body', async () => {
+    if (typeof ReadableStream === 'undefined') return;
+    
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('stream data'));
+        controller.close();
+      }
+    });
+
+    mockFetchResponse({});
+
+    await jady({
+      url: 'https://api.example.com/upload-stream',
+      method: 'POST',
+      data: stream
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: stream
+      })
+    );
+    
+    // Should NOT have application/json content-type
+    const callArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const headers = callArgs[1].headers;
+    expect(headers).not.toHaveProperty('content-type');
+  });
 });
