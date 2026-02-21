@@ -17,7 +17,13 @@ function mockFetchResponse(body: any, status = 200, headers = {}) {
 
 describe('jady-js', () => {
   beforeEach(() => {
-    (global.fetch as jest.Mock).mockClear();
+    (global.fetch as jest.Mock).mockReset();
+    jest.useRealTimers();
+  });
+
+  afterEach(() => {
+
+    jest.useRealTimers();
   });
 
   test('should make a basic GET request', async () => {
@@ -660,5 +666,68 @@ describe('jady-js', () => {
     });
 
     jest.useRealTimers();
+  });
+
+  test('should use custom retryCondition', async () => {
+    let calls = 0;
+    (global.fetch as jest.Mock).mockImplementation(async () => {
+      calls++;
+      if (calls === 1) {
+        throw new Error('Network Error');
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ success: true }),
+        text: async () => JSON.stringify({ success: true }),
+        arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ success: true })).buffer
+      };
+    });
+    // Retry only if error message contains "Network"
+    const retryCondition = jest.fn((error) => error.message.includes('Network'));
+
+    await jady({
+      url: 'https://api.example.com/retry-condition',
+      retry: 1,
+      retryCondition,
+      retryDelay: 1
+    });
+
+    expect(retryCondition).toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('should handle arraybuffer response', async () => {
+    const buffer = new TextEncoder().encode('binary data').buffer;
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      arrayBuffer: async () => buffer
+    });
+
+    const response = await jady({
+      url: 'https://api.example.com/binary',
+      responseType: 'arraybuffer'
+    });
+
+    expect(response.body).toEqual(buffer);
+  });
+
+  test('should serialize Date params to ISO string', async () => {
+    mockFetchResponse({});
+    const date = new Date('2023-01-01T00:00:00.000Z');
+
+    await jady({
+      url: 'https://api.example.com/date',
+      params: { date }
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      // jady decodes %3A back to : for readability, so we expect unencoded colons
+      'https://api.example.com/date?date=' + date.toISOString(),
+      expect.anything()
+    );
   });
 });

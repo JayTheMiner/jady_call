@@ -117,6 +117,9 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
     }
 
     try {
+      // Reset error from previous attempts
+      error = undefined;
+
       // 5. Adapter Execution
       if (!config.adapter) {
         throw createError('Adapter not implemented yet', JadyErrorCodes.EUNKNOWN, config);
