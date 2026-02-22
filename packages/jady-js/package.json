@@ -1,28 +1,24 @@
 {
-  "name": "jady-js",
+  "name": "jady-call",
   "version": "0.1.0",
-  "description": "Standardized HTTP Client Interface for Polyglot Environments (JavaScript/TypeScript Implementation)",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc",
-    "test": "jest"
+  "type": "module",
+
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
   },
-  "keywords": [
-    "http",
-    "client",
-    "jady",
-    "standard",
-    "interface"
-  ],
-  "author": "",
-  "license": "MIT",
-  "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^18.0.0",
-    "jest": "^29.7.0",
-    "ts-jest": "^29.1.1",
-    "@types/jest": "^29.5.11",
-    "jest-environment-jsdom": "^29.7.0"
+
+  "files": ["dist"],
+
+  "scripts": {
+    "build": "tsup",
+    "prepare": "npm run build",
+    "test": "jest"
   }
 }
