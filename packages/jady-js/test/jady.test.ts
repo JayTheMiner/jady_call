@@ -1810,5 +1810,38 @@ describe('jady-js', () => {
     expect(headers).not.toHaveProperty('cookie');
   });
 
+  test('should support convenience methods (put, delete, patch)', async () => {
+    mockFetchResponse({ updated: true });
+
+    // PUT
+    await jady.put('https://api.example.com/update', { name: 'new' });
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: 'put', // or PUT depending on implementation, fetch adapter handles case
+        body: JSON.stringify({ name: 'new' })
+      })
+    );
+
+    // PATCH
+    await jady.patch('https://api.example.com/patch', { name: 'patched' });
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: 'patch',
+        body: JSON.stringify({ name: 'patched' })
+      })
+    );
+
+    // DELETE
+    await jady.delete('https://api.example.com/delete');
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: 'delete'
+      })
+    );
+  });
+
 
 });
