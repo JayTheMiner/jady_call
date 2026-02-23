@@ -1,8 +1,25 @@
 {
   "name": "jady-call",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
+  "description": "jady.call의 공식 JavaScript/TypeScript 구현체",
+  "author": "jaytheminer7@gmail.com",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jaytheminer7/jady_call.git",
+    "directory": "packages/jady-js"
+  },
+  "keywords": [
+    "http",
+    "fetch",
+    "client",
+    "request",
+    "jady",
+    "typescript",
+    "promise",
+    "network"
+  ],
   "engines": {
     "node": ">=18.0.0"
   },
