@@ -1,14 +1,14 @@
 {
   "name": "jady-call",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "jady.call의 공식 JavaScript/TypeScript 구현체",
   "author": "jaytheminer7@gmail.com",
   "license": "MIT",
-  "homepage": "https://github.com/jaytheminer7/jady_call#readme",
+  "homepage": "https://github.com/jaytheminer/jady_call#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jaytheminer7/jady_call.git",
+    "url": "https://github.com/jaytheminer/jady_call.git",
     "directory": "packages/jady-js"
   },
   "keywords": [
