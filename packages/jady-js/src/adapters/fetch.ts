@@ -7,7 +7,8 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
   // 1. Auth Handling
   if (config.auth) {
     const { username, password, bearer } = config.auth as any;
-    if (!headers['Authorization'] && !headers['authorization']) {
+    // Headers are already normalized to lowercase by processHeaders
+    if (!headers['authorization']) {
       if (username !== undefined) {
         const encoded = typeof btoa !== 'undefined' 
           ? btoa(unescape(encodeURIComponent(`${username}:${password || ''}`)))
@@ -109,7 +110,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
   try {
     const startTime = Date.now();
     const response = await fetch(config.url, {
-      method: config.method,
+      method: (config.method || 'GET').toUpperCase(),
       headers,
       body,
       signal,
@@ -189,9 +190,20 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
         const text = await getText();
         rawBody = text;
 
+        // Helper function to parse JSON with BOM removal
+        const parseJSON = (jsonText: string) => {
+          // Remove UTF-8 BOM if present
+          const cleanText = jsonText.replace(/^\uFEFF/, '').trim();
+          // Return null for empty response (spec compliance)
+          if (cleanText.length === 0) {
+            return null;
+          }
+          return JSON.parse(cleanText, config.jsonReviver);
+        };
+
         if (config.responseType === 'json') {
           try {
-            responseBody = JSON.parse(text, config.jsonReviver);
+            responseBody = parseJSON(text);
           } catch (e) {
             throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
           }
@@ -200,7 +212,7 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
         } else {
           if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
             try {
-              responseBody = JSON.parse(text, config.jsonReviver);
+              responseBody = parseJSON(text);
             } catch (e) {
               throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
             }
@@ -213,7 +225,9 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
           responseBody = rawResponse.body;
         } else if (config.responseType === 'json') {
           try {
-            responseBody = await rawResponse.json();
+            const jsonText = await rawResponse.text();
+            const cleanText = jsonText.replace(/^\uFEFF/, '').trim();
+            responseBody = cleanText.length === 0 ? null : JSON.parse(cleanText, config.jsonReviver);
           } catch (e) {
             throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
           }
@@ -226,7 +240,9 @@ export default async function fetchAdapter(config: JadyConfig): Promise<JadyResp
         } else {
           if (contentType && (contentType.includes('application/json') || contentType.includes('+json'))) {
             try {
-              responseBody = await rawResponse.json();
+              const jsonText = await rawResponse.text();
+              const cleanText = jsonText.replace(/^\uFEFF/, '').trim();
+              responseBody = cleanText.length === 0 ? null : JSON.parse(cleanText, config.jsonReviver);
             } catch (e) {
               throw createError('JSON Parse Error', JadyErrorCodes.EPARSE, config, undefined, e);
             }

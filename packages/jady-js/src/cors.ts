@@ -65,8 +65,17 @@ function getRetryDelay(config: JadyConfig, retryCount: number, error: any, respo
  * Core logic to process config and dispatch request.
  */
 export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyResponse> {
-  // 1. Merge with defaults
-  let config = mergeConfig(defaults, userConfig) as JadyConfig;
+  // 1. Deep copy user config to preserve immutability (prevent mutations to original config)
+  // Use mergeConfig to perform deep copy of plain objects while preserving class instances
+  const userConfigCopy = mergeConfig({}, userConfig) as JadyConfig;
+  
+  // 2. Normalize method early
+  if (userConfigCopy.method) {
+    userConfigCopy.method = (userConfigCopy.method as string).toUpperCase() as any;
+  }
+  
+  // 3. Merge with defaults
+  let config = mergeConfig(defaults, userConfigCopy) as JadyConfig;
   const startTime = Date.now();
 
   // requestId 자동 생성 (없을 경우 UUID 또는 랜덤 문자열 부여)
@@ -98,8 +107,9 @@ export async function dispatchRequest(userConfig: JadyConfig): Promise<JadyRespo
 
   // XSRF Handling (Browser only)
   if (typeof document !== 'undefined' && config.xsrfCookieName && config.xsrfHeaderName) {
-    //안전한 메서드(GET, HEAD 등)에는 XSRF 토큰을 포함하지 않음
-    const isSafeMethod = ['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes((config.method || 'GET').toUpperCase());
+    // Safe methods (GET, HEAD, etc.) do not include XSRF token
+    // Method is already normalized to uppercase
+    const isSafeMethod = ['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(config.method || 'GET');
     if (!isSafeMethod) {
       const xsrfValue = parseCookie(document.cookie, config.xsrfCookieName);
       if (xsrfValue && !config.headers[config.xsrfHeaderName.toLowerCase()]) {

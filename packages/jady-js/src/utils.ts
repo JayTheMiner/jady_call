@@ -174,6 +174,20 @@ export function buildURL(url: string, params?: any, paramsSerializer?: (params: 
 }
 
 export function createError(message: string, code: string, config: JadyConfig, response?: JadyResponse, originalError?: any): JadyError {
+  /**
+   * Creates a standard JadyError object with consistent structure.
+   * 
+   * @param message - Human-readable error message
+   * @param code - Standard error code (ETIMEDOUT, ECANCELED, ENETWORK, EPARSE, etc.)
+   * @param config - The request configuration that caused the error
+   * @param response - Response object (included when response was received, optional)
+   * @param originalError - The underlying error from fetch/adapter (preserved for debugging)
+   * 
+   * Response is typically only populated for:
+   * - HTTP error responses (4xx, 5xx) that failed validateStatus
+   * - JSON parsing errors when partial response was received
+   * - Redirect limit exceeded (last response included)
+   */
   const error = new Error(message) as JadyError;
   error.code = code;
   error.config = config;

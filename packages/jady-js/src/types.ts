@@ -202,10 +202,39 @@ export interface JadyResponse<T = any> {
 }
 
 export interface JadyError extends Error {
+  /**
+   * Standard error code (e.g., ETIMEDOUT, ECANCELED, ENETWORK, EPARSE, EMAXREDIRECTS, EUNKNOWN)
+   */
   code: string;
+  
+  /**
+   * The request configuration that caused this error
+   */
   config: JadyConfig;
+  
+  /**
+   * Response object (when available).
+   * 
+   * Populated in these scenarios:
+   * - HTTP error status (4xx, 5xx) that failed validateStatus check
+   * - JSON/parsing error when partial response is received
+   * - Max redirect limit exceeded (last redirect response included)
+   * 
+   * NOT populated in these scenarios:
+   * - Network errors (ENETWORK): No response received from server
+   * - Timeout errors (ETIMEDOUT): Connection failed before receiving response
+   * - Canceled requests (ECANCELED): Request was aborted by signal
+   */
   response?: JadyResponse;
+  
+  /**
+   * Timing information collected before the error occurred
+   */
   timings?: JadyTimings;
+  
+  /**
+   * Original error cause (useful for debugging)
+   */
   cause?: any;
 }
 

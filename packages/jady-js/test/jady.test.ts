@@ -1818,7 +1818,7 @@ describe('jady-js', () => {
     expect(global.fetch).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.objectContaining({
-        method: 'put', // or PUT depending on implementation, fetch adapter handles case
+        method: 'PUT', // Methods are normalized to uppercase
         body: JSON.stringify({ name: 'new' })
       })
     );
@@ -1828,7 +1828,7 @@ describe('jady-js', () => {
     expect(global.fetch).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.objectContaining({
-        method: 'patch',
+        method: 'PATCH',
         body: JSON.stringify({ name: 'patched' })
       })
     );
@@ -1838,10 +1838,133 @@ describe('jady-js', () => {
     expect(global.fetch).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.objectContaining({
-        method: 'delete'
+        method: 'DELETE'
       })
     );
   });
 
+  // P2 improvement: Additional test cases
+  test('should return null for empty JSON response', async () => {
+    // Spec: Empty Response - responseType: 'json' should return null if body length is 0
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => { throw new Error('Should not be called'); },
+      text: async () => '',  // Empty response
+      blob: async () => new Blob([]),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+
+    const response = await jady({ 
+      url: 'https://api.example.com/empty', 
+      responseType: 'json' 
+    });
+
+    expect(response.body).toBeNull();
+    expect(response.status).toBe(200);
+  });
+
+  test('should handle BOM (Byte Order Mark) in JSON response', async () => {
+    // Spec: JSON should be parsed after removing BOM (Byte Order Mark)
+    const bomJson = '\uFEFF{"key": "value", "data": "test"}';
+    
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => { throw new Error('Should not be called - we parse text'); },
+      text: async () => bomJson,
+      blob: async () => new Blob([bomJson]),
+      arrayBuffer: async () => new TextEncoder().encode(bomJson).buffer,
+    });
+
+    const response = await jady({ 
+      url: 'https://api.example.com/bom',
+      responseType: 'json'
+    });
+
+    expect(response.body).toEqual({ key: 'value', data: 'test' });
+    expect(response.body.key).toBe('value');
+  });
+
+  test('should normalize method to uppercase even with lowercase input', async () => {
+    // Spec: Method input is case-insensitive but must be sent as uppercase
+    mockFetchResponse({ success: true });
+
+    // Test with lowercase method
+    await jady({ url: 'https://api.example.com/test', method: 'post' });
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      'https://api.example.com/test',
+      expect.objectContaining({ method: 'POST' })
+    );
+
+    (global.fetch as jest.Mock).mockClear();
+
+    // Test with mixed case method (using 'as any' to bypass TypeScript strict checking)
+    await jady({ url: 'https://api.example.com/test', method: 'GeT' as any });
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      'https://api.example.com/test',
+      expect.objectContaining({ method: 'GET' })
+    );
+
+    (global.fetch as jest.Mock).mockClear();
+
+    // Test with DELETE
+    await jady({ url: 'https://api.example.com/test', method: 'delete' });
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      'https://api.example.com/test',
+      expect.objectContaining({ method: 'DELETE' })
+    );
+  });
+
+  test('should handle BOM in auto-detected JSON response', async () => {
+    // Test when responseType is 'auto' (default) and content-type indicates JSON
+    const bomJson = '\uFEFF{"result": "success"}';
+    
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => { throw new Error('Should not be called'); },
+      text: async () => bomJson,
+      blob: async () => new Blob([bomJson]),
+      arrayBuffer: async () => new TextEncoder().encode(bomJson).buffer,
+    });
+
+    const response = await jady({ 
+      url: 'https://api.example.com/auto-json'
+      // responseType: 'auto' is default
+    });
+
+    expect(response.body).toEqual({ result: 'success' });
+  });
+
+  test('should handle multiple empty responses without errors', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => '',
+      blob: async () => new Blob([]),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+
+    // First request
+    const response1 = await jady({ url: 'https://api.example.com/1', responseType: 'json' });
+    expect(response1.body).toBeNull();
+
+    // Second request with same config object (test immutability)
+    const config = { url: 'https://api.example.com/2', responseType: 'json' as const };
+    const response2 = await jady(config);
+    expect(response2.body).toBeNull();
+
+    // Original config should not be mutated
+    expect((config as any).requestId).toBeUndefined();
+  });
 
 });
