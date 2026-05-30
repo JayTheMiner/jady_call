@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/jady_call/__init__.py
+src/jady_call/dispatch.py
+src/jady_call/types.py
+src/jady_call/utils.py
+src/jady_call.egg-info/PKG-INFO
+src/jady_call.egg-info/SOURCES.txt
+src/jady_call.egg-info/dependency_links.txt
+src/jady_call.egg-info/requires.txt
+src/jady_call.egg-info/top_level.txt
+src/jady_call/adapters/__init__.py
+src/jady_call/adapters/urllib_adapter.py
+tests/test_jady_call.py
